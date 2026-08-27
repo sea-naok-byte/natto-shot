@@ -114,7 +114,8 @@
 .ft-btn-primary { background: var(--chrome); border: none; color: #fff; font-weight: 700; border-radius: 8px; padding: 7px 14px; font-size: 12.5px; cursor: pointer; }
 
 .ft-bottomnav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; background: #fff; border-top: 1px solid var(--border); display: flex; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); z-index: 40; }
-.ft-navitem { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; color: var(--muted); font-size: 10px; font-weight: 700; cursor: pointer; padding: 4px; }
+.ft-navitem { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; color: var(--muted); font-size: 10px; font-weight: 700; cursor: pointer; padding: 4px; }
+.ft-nav-dot { position: absolute; top: 2px; right: 22%; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); border: 1.5px solid #fff; }
 .ft-navitem.active { color: var(--chrome); }
 .ft-navitem-meet { flex: 0 0 20%; }
 .ft-navitem-meet.active { color: var(--meet); }
@@ -135,6 +136,7 @@
 .ft-bubble { max-width: 78%; padding: 8px 12px; border-radius: 14px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 .ft-stamp { font-size: 40px; line-height: 1; padding: 2px 4px; }
 .ft-bubble-meta { font-size: 10px; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace; }
+.ft-chat-date-sep { text-align: center; font-size: 11px; color: var(--muted); font-weight: 700; margin: 10px 0 4px; }
 .ft-read { color: var(--chrome); display: flex; align-items: center; gap: 2px; }
 .ft-chat-input-row { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
 .ft-chat-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 18px; padding: 10px 16px; font-size: 13.5px; font-family: inherit; resize: none; max-height: 90px; overflow-y: auto; line-height: 1.4; }

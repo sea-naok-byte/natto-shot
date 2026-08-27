@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, Fragment } from "react";
 import { collection, getDocs, writeBatch } from "firebase/firestore";
 import {
   Calendar as CalendarIcon, MessageCircle, LogOut, Plus, X, Send,
@@ -22,7 +22,7 @@ import {
 
 // デモ中は「切替」でどちらの名前も自由に見られるようにしている。
 // 本番運用に切り替えるときは false にすると、切替ボタンと全データ削除ボタンが消える。
-const DEMO_MODE = false;
+const DEMO_MODE = true;
 const FIXED_NAMES = { a: "なおや", b: "ゆりか" };
 
 // 文中のURLをクリックできるリンクに変換する
@@ -120,9 +120,32 @@ export default function App() {
   const prevScrollHeightRef = useRef(0);
   const tabRef = useRef(tab);
   const lastMsgIdRef = useRef(null);
+  const [seenVersion, setSeenVersion] = useState(0);
 
   useEffect(() => { tabRef.current = tab; }, [tab]);
   useEffect(() => { setDiaryCardOpen(false); }, [selectedDate]);
+
+  function getLastSeen(tabName) {
+    return parseInt(localStorage.getItem(`ft_lastseen_${tabName}_${myRole}`) || "0", 10);
+  }
+  function markSeen(tabName) {
+    if (!myRole) return;
+    localStorage.setItem(`ft_lastseen_${tabName}_${myRole}`, String(Date.now()));
+    setSeenVersion((v) => v + 1);
+  }
+  function handleTabChange(t) {
+    setTab(t);
+    if (t === "chat" || t === "meet" || t === "diary") markSeen(t);
+    if (t === "chat") isNearBottomRef.current = true;
+  }
+  // 初めて使う端末では、それ以前の内容をすべて「未読」扱いにしないよう、初回だけ現在時刻で初期化する
+  useEffect(() => {
+    if (!myRole) return;
+    ["chat", "meet", "diary"].forEach((t) => {
+      const key = `ft_lastseen_${t}_${myRole}`;
+      if (!localStorage.getItem(key)) localStorage.setItem(key, String(Date.now()));
+    });
+  }, [myRole]);
 
   /* ---- boot ---- */
   useEffect(() => {
@@ -333,6 +356,7 @@ export default function App() {
     }
     const newEntries = dates.map((dt) => ({ date: dt, groupId, ...base }));
     await addShiftsBatch(newEntries);
+    if (isMeet) markSeen("meet");
     setShowForm(false);
     resetForm();
   }
@@ -340,10 +364,12 @@ export default function App() {
   async function handleDelete(entry, mode) {
     if (entry.groupId && mode === "future") await deleteShiftGroupFuture(entry.groupId, entry.date);
     else await deleteShiftSingle(entry.id);
+    if (entry.type === "合流") markSeen("meet");
   }
 
   function handleMeetupChange(entry, field, value) {
     meetActivityRef.current = Date.now();
+    markSeen("meet");
     if (entry.isGroup) updateShiftGroupFields(entry.groupId, { [field]: value });
     else updateShiftFull(entry.id, { [field]: value });
   }
@@ -443,6 +469,24 @@ export default function App() {
     : "";
 
   const filteredMessages = chatSearching && chatQuery.trim() ? (chatSearchResults || []) : messages;
+
+  const hasNewChat = useMemo(() => {
+    if (messages.length === 0) return false;
+    return messages[messages.length - 1].ts > getLastSeen("chat");
+  }, [messages, seenVersion, myRole]);
+
+  const hasNewMeet = useMemo(() => {
+    const meetEntries = shifts.filter((e) => e.type === "合流");
+    if (meetEntries.length === 0) return false;
+    const latest = Math.max(...meetEntries.map((e) => e.updatedAt || e.createdAt || 0));
+    return latest > getLastSeen("meet");
+  }, [shifts, seenVersion, myRole]);
+
+  const hasNewDiary = useMemo(() => {
+    if (diary.length === 0) return false;
+    const latest = Math.max(...diary.map((e) => e.updatedAt || 0));
+    return latest > getLastSeen("diary");
+  }, [diary, seenVersion, myRole]);
 
   const nameOf = (p) => { if (p === "both") return "ふたり"; return names ? names[p] : p === "a" ? "A" : "B"; };
   const colorOf = (p) => (p === "a" ? "var(--gold)" : "var(--teal)");
@@ -735,7 +779,7 @@ export default function App() {
                   <div style={{ marginTop: 12 }}>
                     <div className="ft-diary-box">
                       <div className="ft-diary-name"><span style={{ width: 8, height: 8, borderRadius: "50%", background: colorOf(myRole) }} />{nameOf(myRole)}の日記</div>
-                      <DiaryEditor key={`sched-${selectedDate}-${myRole}`} initialText={myDiaryTextForSelected} onSubmit={(val) => saveDiaryEntry(myRole, selectedDate, val)} onDelete={() => deleteDiaryEntry(myRole, selectedDate)} />
+                      <DiaryEditor key={`sched-${selectedDate}-${myRole}`} initialText={myDiaryTextForSelected} onSubmit={(val) => { saveDiaryEntry(myRole, selectedDate, val); markSeen("diary"); }} onDelete={() => { deleteDiaryEntry(myRole, selectedDate); markSeen("diary"); }} />
                     </div>
                     <div className="ft-diary-box" style={{ marginBottom: 0 }}>
                       <div className="ft-diary-name"><span style={{ width: 8, height: 8, borderRadius: "50%", background: colorOf(otherRole) }} />{nameOf(otherRole)}の日記<Lock size={11} color="var(--muted)" title="他の人の日記は編集できません" /></div>
@@ -777,20 +821,34 @@ export default function App() {
                   </button>
                 )}
                 {filteredMessages.length === 0 && <div className="ft-empty">{chatSearching ? "見つかりませんでした" : "まだメッセージがありません"}</div>}
-                {filteredMessages.map((m) => {
+                {filteredMessages.map((m, idx) => {
                   const mine = m.person === myRole;
                   const otherR = myRole === "a" ? "b" : "a";
                   const read = mine && (m.readBy || []).includes(otherR);
+                  const prev = filteredMessages[idx - 1];
+                  const curDay = new Date(m.ts).toDateString();
+                  const showDateSep = !prev || new Date(prev.ts).toDateString() !== curDay;
+                  const dateLabel = (() => {
+                    const d = new Date(m.ts);
+                    const today = new Date();
+                    const yest = new Date(); yest.setDate(today.getDate() - 1);
+                    if (d.toDateString() === today.toDateString()) return "今日";
+                    if (d.toDateString() === yest.toDateString()) return "昨日";
+                    return d.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
+                  })();
                   return (
-                    <div className={`ft-bubble-row ${mine ? "mine" : "theirs"}`} key={m.id}>
-                      {m.type === "stamp" ? <div className="ft-stamp">{m.content}</div> : <div className="ft-bubble" style={{ background: softOf(m.person), border: `1px solid ${colorOf(m.person)}` }}>{linkify(m.content)}</div>}
-                      <div className="ft-bubble-meta">
-                        {!mine && nameOf(m.person)}
-                        {new Date(m.ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                        {read && <span className="ft-read"><CheckCheck size={11} /> 既読</span>}
-                        {mine && !read && <button className="ft-msg-delete" onClick={() => deleteChatMessage(m.id)} title="取り消す"><X size={10} /> 取り消し</button>}
+                    <Fragment key={m.id}>
+                      {showDateSep && <div className="ft-chat-date-sep">{dateLabel}</div>}
+                      <div className={`ft-bubble-row ${mine ? "mine" : "theirs"}`}>
+                        {m.type === "stamp" ? <div className="ft-stamp">{m.content}</div> : <div className="ft-bubble" style={{ background: softOf(m.person), border: `1px solid ${colorOf(m.person)}` }}>{linkify(m.content)}</div>}
+                        <div className="ft-bubble-meta">
+                          {!mine && nameOf(m.person)}
+                          {new Date(m.ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                          {read && <span className="ft-read"><CheckCheck size={11} /> 既読</span>}
+                          {mine && !read && <button className="ft-msg-delete" onClick={() => deleteChatMessage(m.id)} title="取り消す"><X size={10} /> 取り消し</button>}
+                        </div>
                       </div>
-                    </div>
+                    </Fragment>
                   );
                 })}
                 <div ref={chatEndRef} />
@@ -909,10 +967,16 @@ export default function App() {
       </div>
 
       <div className="ft-bottomnav">
-        <button className={`ft-navitem ${tab === "schedule" ? "active" : ""}`} onClick={() => setTab("schedule")}><CalendarIcon size={18} />スケジュール</button>
-        <button className={`ft-navitem ${tab === "chat" ? "active" : ""}`} onClick={() => setTab("chat")}><MessageCircle size={18} />チャット</button>
-        <button className={`ft-navitem ft-navitem-meet ${tab === "meet" ? "active" : ""}`} onClick={() => setTab("meet")}><Heart size={18} fill={tab === "meet" ? "var(--meet)" : "none"} />合流</button>
-        <button className={`ft-navitem ${tab === "diary" ? "active" : ""}`} onClick={() => setTab("diary")}><BookOpen size={18} />日記</button>
+        <button className={`ft-navitem ${tab === "schedule" ? "active" : ""}`} onClick={() => handleTabChange("schedule")}><CalendarIcon size={18} />スケジュール</button>
+        <button className={`ft-navitem ${tab === "chat" ? "active" : ""}`} onClick={() => handleTabChange("chat")}>
+          <MessageCircle size={18} />チャット{hasNewChat && <span className="ft-nav-dot" />}
+        </button>
+        <button className={`ft-navitem ft-navitem-meet ${tab === "meet" ? "active" : ""}`} onClick={() => handleTabChange("meet")}>
+          <Heart size={18} fill={tab === "meet" ? "var(--meet)" : "none"} />合流{hasNewMeet && <span className="ft-nav-dot" />}
+        </button>
+        <button className={`ft-navitem ${tab === "diary" ? "active" : ""}`} onClick={() => handleTabChange("diary")}>
+          <BookOpen size={18} />日記{hasNewDiary && <span className="ft-nav-dot" />}
+        </button>
       </div>
 
       {deleteTarget && (
@@ -940,6 +1004,7 @@ export default function App() {
           onSave={async (patch) => {
             if (editTarget.isGroup) await updateShiftGroupFields(editTarget.groupId, patch);
             else await updateShiftFull(editTarget.id, patch);
+            if (editTarget.type === "合流" || patch.type === "合流") markSeen("meet");
             setEditTarget(null);
           }}
         />
@@ -999,6 +1064,13 @@ function MeetupItem({ entry, onChange, onEdit, hideHeader }) {
   const [memory, setMemory] = useState(entry.meetMemory || "");
   const [count, setCount] = useState(entry.meetCount || "");
   const [place, setPlace] = useState(entry.meetPlace || "");
+  // entryは同じコンポーネントのまま(key/idが変わらない)更新されることがあるため、
+  // 保存された値が変わったらローカルの入力欄も追従させる(そうしないと編集モーダルでの
+  // 保存がFirestore上には反映されているのに、この画面では反映されていないように見えてしまう)
+  useEffect(() => { setPlan(entry.meetPlan || ""); }, [entry.meetPlan]);
+  useEffect(() => { setMemory(entry.meetMemory || ""); }, [entry.meetMemory]);
+  useEffect(() => { setCount(entry.meetCount || ""); }, [entry.meetCount]);
+  useEffect(() => { setPlace(entry.meetPlace || ""); }, [entry.meetPlace]);
   const fmtDate = (ds) => new Date(ds + "T00:00:00").toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
   const dateLabel = entry.isGroup ? `${fmtDate(entry.dateStart)} 〜 ${fmtDate(entry.dateEnd)}` : fmtDate(entry.date);
   const targetDate = entry.isGroup ? entry.dateStart : entry.date;
@@ -1041,6 +1113,12 @@ function MeetupEditor({ entry, onChange }) {
   const [memory, setMemory] = useState(entry.meetMemory || "");
   const [count, setCount] = useState(entry.meetCount || "");
   const [place, setPlace] = useState(entry.meetPlace || "");
+  // 編集モーダルなど別の場所での保存も、ここの表示に反映されるようにする
+  useEffect(() => { setComment(entry.comment || ""); }, [entry.comment]);
+  useEffect(() => { setPlan(entry.meetPlan || ""); }, [entry.meetPlan]);
+  useEffect(() => { setMemory(entry.meetMemory || ""); }, [entry.meetMemory]);
+  useEffect(() => { setCount(entry.meetCount || ""); }, [entry.meetCount]);
+  useEffect(() => { setPlace(entry.meetPlace || ""); }, [entry.meetPlace]);
   return (
     <div style={{ width: "100%" }}>
       <div className="ft-meet-field-label">コメント</div>

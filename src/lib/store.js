@@ -13,8 +13,8 @@ import {
   where,
   orderBy,
   limit,
+  limitToLast,
   arrayUnion,
-  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -41,7 +41,8 @@ export function listenShifts(callback) {
 
 export async function addShiftsBatch(entries) {
   const batch = writeBatch(db);
-  entries.forEach((entry) => batch.set(doc(collection(db, "shifts")), entry));
+  const now = Date.now();
+  entries.forEach((entry) => batch.set(doc(collection(db, "shifts")), { ...entry, createdAt: now }));
   await batch.commit();
 }
 
@@ -58,21 +59,23 @@ export async function deleteShiftGroupFuture(groupId, fromDate) {
 }
 
 export async function updateShiftFull(id, patch) {
-  await updateDoc(doc(db, "shifts", id), patch);
+  await updateDoc(doc(db, "shifts", id), { ...patch, updatedAt: Date.now() });
 }
 
 export async function updateShiftGroupFields(groupId, patch) {
   const q = query(collection(db, "shifts"), where("groupId", "==", groupId));
   const snap = await getDocs(q);
   const batch = writeBatch(db);
-  snap.docs.forEach((d) => batch.update(d.ref, patch));
+  snap.docs.forEach((d) => batch.update(d.ref, { ...patch, updatedAt: Date.now() }));
   await batch.commit();
 }
 
 /* ---------------- chat ---------------- */
 
 export function listenChatRecent(limitCount, callback) {
-  const q = query(collection(db, "chat"), orderBy("ts", "asc"), limit(limitCount));
+  // 注意: orderBy(asc) + limit() だと「古い方から」limitCount件になってしまうため、
+  // limitToLast を使って「新しい方から」limitCount件を取得する(結果は引き続き昇順で返る)
+  const q = query(collection(db, "chat"), orderBy("ts", "asc"), limitToLast(limitCount));
   return onSnapshot(q, (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
 
@@ -110,7 +113,7 @@ export function listenDiary(callback) {
 }
 
 export async function saveDiaryEntry(person, date, text) {
-  await setDoc(doc(db, "diary", `${date}_${person}`), { date, person, text, updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "diary", `${date}_${person}`), { date, person, text, updatedAt: Date.now() }, { merge: true });
 }
 
 export async function deleteDiaryEntry(person, date) {
