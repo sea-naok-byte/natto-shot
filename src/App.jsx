@@ -22,7 +22,7 @@ import {
 
 // デモ中は「切替」でどちらの名前も自由に見られるようにしている。
 // 本番運用に切り替えるときは false にすると、切替ボタンと全データ削除ボタンが消える。
-const DEMO_MODE = true;
+const DEMO_MODE = false;
 const FIXED_NAMES = { a: "なおや", b: "ゆりか" };
 
 // 文中のURLをクリックできるリンクに変換する
@@ -133,10 +133,22 @@ export default function App() {
     localStorage.setItem(`ft_lastseen_${tabName}_${myRole}`, String(Date.now()));
     setSeenVersion((v) => v + 1);
   }
+  function scrollChatToLatest(smooth) {
+    const el = chatBodyRef.current;
+    if (!el) return;
+    if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    else el.scrollTop = el.scrollHeight;
+  }
+
   function handleTabChange(t) {
     setTab(t);
     if (t === "chat" || t === "meet" || t === "diary") markSeen(t);
-    if (t === "chat") isNearBottomRef.current = true;
+    if (t === "chat") {
+      isNearBottomRef.current = true;
+      setShowScrollToBottom(false);
+      // タブが実際に描画され終わってから一番下に飛ぶ(描画前だとスクロール量が正しく計算できないため)
+      requestAnimationFrame(() => scrollChatToLatest(false));
+    }
   }
   // 初めて使う端末では、それ以前の内容をすべて「未読」扱いにしないよう、初回だけ現在時刻で初期化する
   useEffect(() => {
@@ -194,7 +206,7 @@ export default function App() {
   useEffect(() => {
     if (tab !== "chat") return;
     if (isNearBottomRef.current) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollChatToLatest(true);
       setShowScrollToBottom(false);
     } else {
       setShowScrollToBottom(true);
@@ -224,7 +236,7 @@ export default function App() {
   function scrollChatToBottom() {
     isNearBottomRef.current = true;
     setShowScrollToBottom(false);
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollChatToLatest(true);
   }
 
   /* ---- 既読 ---- */
