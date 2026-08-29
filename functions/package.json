@@ -1,0 +1,14 @@
+{
+  "name": "functions",
+  "description": "Cloud Functions for なっとう",
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.3.1",
+    "firebase-functions": "^5.0.1"
+  }
+}

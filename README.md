@@ -1,8 +1,10 @@
-# ふたり手帳 (Firebase版・Cloud Functionsなし)
+# なっとう (Firebase版・プッシュ通知対応)
 
 ふたりでスケジュール・チャット・「合流」の記録・日記・電話の記録を共有するWebアプリです。
-React (Vite) + Firebase (Firestore / Authentication / Hosting) だけで動きます。
-**Cloud Functionsは使っていない**ので、無料の Spark プランのままで運用できます。
+React (Vite) + Firebase (Firestore / Authentication / Hosting / Cloud Functions / Cloud Messaging) で動きます。
+
+**プッシュ通知(アプリを閉じていても届く)を使うため、Firebaseの Blaze プラン(従量課金)が必要です。**
+ふたりだけの利用であれば、実際の課金額はほぼ0円〜数円程度に収まります。
 
 ## 主な機能
 
@@ -15,32 +17,41 @@ React (Vite) + Firebase (Firestore / Authentication / Hosting) だけで動き�
   相手の分は閲覧のみ。どちらも未来の日付には記録できません。
 - **日本の祝日**をカレンダー上で自動判定して赤色表示(振替休日・国民の休日にも対応)。
 - **チャット**: 既読(既読が付いたメッセージは取り消し不可)・スタンプ・絵文字・URL自動リンク化・
-  日付指定での一括削除・全履歴検索・最新へ戻るボタンに対応。
-- 文中のURLはどの画面でもクリックできるリンクになります。
+  日付指定での一括削除・全履歴検索・最新へ戻るボタン・日付区切り表示に対応。
+- **チャット・合流・日記タブの新着マーク**: 相手が書き込んだときだけ、タブに赤い印が付きます。
+- **本当のプッシュ通知**: チャットで新しいメッセージが届くと、アプリを閉じていても・スマホをロックして
+  いても通知が届きます(Cloud Functions + Firebase Cloud Messagingで実現)。
 
 ## 構成
 
 ```
 futari-techo/
 ├── src/                  React アプリ本体
-│   ├── App.jsx           画面・ロジック全体
-│   ├── firebase.js       Firebase 初期化
-│   ├── styles.css         スタイル一式
+│   ├── App.jsx
+│   ├── firebase.js
+│   ├── styles.css
 │   └── lib/
-│       ├── dates.js       日付・繰り返し・祝日の計算
-│       ├── constants.js   予定の種類・スタンプ・絵文字
-│       └── store.js       Firestore の読み書き(合言葉の保存/確認も含む)
-├── public/manifest.json
+│       ├── dates.js
+│       ├── constants.js
+│       ├── store.js
+│       └── notifications.js   プッシュ通知の登録
+├── functions/            Cloud Functions(チャット通知の送信)
+├── public/
+│   ├── manifest.json
+│   └── firebase-messaging-sw.js  通知用 Service Worker
 ├── firebase.json / firestore.rules / firestore.indexes.json
 └── .env.example
 ```
 
 ## 1. Firebaseプロジェクトを作る
 
-1. https://console.firebase.google.com/ で新規プロジェクトを作成(**無料のSparkプランのままでOK**)
+1. https://console.firebase.google.com/ で新規プロジェクトを作成
 2. **Authentication** → 「Sign-in method」→ **匿名(Anonymous)** を有効化
-3. **Firestore Database** を作成(本番モードでOK。ルールは後で `firestore.rules` をデプロイします)
-4. プロジェクトの設定 → 全般 → 「マイアプリ」→ ウェブアプリ(`</>`)を追加し、表示された `firebaseConfig` の値を控える
+3. **Firestore Database** を作成(本番モードでOK)
+4. プロジェクトの設定 → 全般 → 「マイアプリ」→ ウェブアプリ(`</>`)を追加し、`firebaseConfig` の値を控える
+5. **Cloud Messaging** タブを開き、「ウェブ構成」→「証明書」で **VAPIDキー** を生成しておく(あとで使います)
+6. 左下の「アップグレード」から **Blazeプラン** に切り替える(クレジットカード登録が必要です。
+   Cloud Functionsを使うために必須です)
 
 ## 2. ローカルに設置する
 
@@ -49,7 +60,7 @@ npm install
 cp .env.example .env
 ```
 
-`.env` に、手順1で控えた `firebaseConfig` の値を書き込みます。
+`.env` に、手順1で控えた値を書き込みます(VAPIDキーも忘れずに)。
 
 ```
 VITE_FIREBASE_API_KEY=xxxx
@@ -58,7 +69,11 @@ VITE_FIREBASE_PROJECT_ID=xxxx
 VITE_FIREBASE_STORAGE_BUCKET=xxxx.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=xxxx
 VITE_FIREBASE_APP_ID=xxxx
+VITE_FIREBASE_VAPID_KEY=xxxx
 ```
+
+`public/firebase-messaging-sw.js` の中にも、同じ`firebaseConfig`の値を直接書き写してください
+(Service Workerは`.env`を読めないためです)。Firebaseのウェブ設定値は公開しても問題ない情報です。
 
 ## 3. Firebase CLIをセットアップ
 
@@ -70,23 +85,36 @@ cp .firebaserc.example .firebaserc
 
 `.firebaserc` の `your-firebase-project-id` を、実際のプロジェクトIDに書き換えます。
 
-## 4. Firestoreのルールをデプロイ
+## 4. Cloud Functionsの部品をインストール
+
+```bash
+cd functions
+npm install
+cd ..
+```
+
+## 5. デプロイする
 
 ```bash
 firebase deploy --only firestore:rules
+firebase deploy --only functions
+npm run deploy
 ```
 
-## 5. ローカルで動作確認
+(2回目以降のちょっとした修正では `npm run deploy` だけで、hosting・firestoreルール・functionsが
+まとめてデプロイされます)
 
-```bash
-npm run dev
-```
+## 6. スマホで通知を有効にする
 
-表示されたURL(通常 http://localhost:5173)を開き、最初にひとり目が合言葉(パスワード)だけを設定します。
-その後「あなたはどちら？」で名前(なおや/ゆりか)を選びます。名前は `src/App.jsx` 冒頭の
-`FIXED_NAMES` で変更できます。もうひとりは同じURLを開き、合言葉を入力→自分の名前を選ぶだけで使えます。
+1. デプロイされたURL(`https://あなたのプロジェクトID.web.app`)をスマホで開く
+2. 「チャット通知を有効にする」ボタンをタップして許可する
+3. 「テスト通知を送る」ボタンでその場で動作確認できます
+4. 相手からメッセージが届くと、アプリを閉じていても通知が届きます
 
-## 6. GitHubに登録する
+**iPhoneの場合の注意**: Safariで直接開いているだけでは、iOSの制約で通知が届きません。
+必ず一度「ホーム画面に追加」してから、ホーム画面のアイコンから開いた状態で通知を許可してください。
+
+## GitHubに登録する
 
 ```bash
 git init
@@ -97,55 +125,30 @@ git remote add origin https://github.com/あなたのアカウント/futari-tech
 git push -u origin main
 ```
 
-`.env` や `.firebaserc` は `.gitignore` に含まれているため、リポジトリには含まれません。
-
-## 7. Firebase Hostingへデプロイ(スマホから使えるURLを発行)
-
-```bash
-npm run deploy
-```
-
-`npm run build` → `firebase deploy` が実行され、`https://あなたのプロジェクトID.web.app` で公開されます。
-このURLをスマホのホーム画面に追加すると、アプリのように使えます(PWA)。
+`.env`・`.firebaserc`・`functions/node_modules` は`.gitignore`に含まれているため、
+リポジトリには含まれません。
 
 ## 本番運用に切り替えるとき
 
-`src/App.jsx` の先頭にある `DEMO_MODE` を `false` にしてください。
+`src/App.jsx` の先頭にある `DEMO_MODE` を `false` にしてください(すでに false になっている場合は
+そのままで構いません)。
 
 ```js
 const DEMO_MODE = false;
 ```
 
-これだけで、ヘッダーの「切替(なおや⇔ゆりかを自由に行き来できる)」ボタンと、
-「全データを削除する」ボタンが両方非表示になります。
-
-## 通知について(重要な制約)
-
-Cloud Functionsを使わないため、**アプリを開いていない/ブラウザを完全に閉じている状態には通知は届きません**。
-
-- アプリ内の「チャット通知を有効にする」ボタンを押すと、そのタブ(ブラウザ)を開いている間、
-  相手からの新着メッセージをOSの通知として表示します(自分がチャットタブを見ていないときのみ)。
-- タブを閉じる、スマホの画面をロックしてブラウザごと終了する、といった状態では通知は届きません。
-- 「本当に閉じていても届く」プッシュ通知にするには、Cloud Functions + Firebase Cloud Messaging
-  のような何らかのサーバー側の仕組みがどうしても必要です。もし後で追加したくなった場合は、
-  そのときにあらためてご相談ください。
+これで、ヘッダーの「切替」ボタンと「全データを削除する」ボタンが両方非表示になります。
 
 ## セキュリティについての注意
 
 このアプリは「合言葉を知っている人だけが使える」というシンプルな考え方を採用しています。
 
 - 合言葉は Firestore の `meta/setup` ドキュメントにそのまま保存され、クライアント側(ブラウザ)で
-  比較しています。Cloud Functionsを使わない都合上、**匿名認証さえしていれば技術的には誰でも
-  Firestoreから合言葉を直接読み取ることが可能**です(このアプリのURLとソースコードの構造を
-  知っている人に限られますが、ゼロではありません)。
-- `meta/setup` は一度作成されたら二度と上書き・削除できないルールにしてあるので、第三者が後から
-  合言葉を書き換えることはできません(アプリ内の「全データを削除する」ボタンも、合言葉自体は
-  削除できない仕様です)。
-- `shifts` / `chat` / `diary` / `calls` などのデータも「匿名認証さえしていれば読み書きできる」
-  ルールです。
-- 家族・恋人など身近な二人だけで使う前提の、簡易的な保護であることをご理解のうえご利用ください。
-  より強固にしたい場合は、Firebase App Check の導入や、合言葉チェックをサーバー側
-  (Cloud Functions等)に戻すといった改善が可能です。
+  比較しています。匿名認証さえしていれば技術的には誰でもFirestoreから合言葉を直接読み取ることが
+  可能ですが、`meta/setup`は一度作成されたら二度と上書き・削除できないルールにしてあります。
+- `shifts` / `chat` / `diary` / `calls` / `fcmTokens` などのデータも「匿名認証さえしていれば
+  読み書きできる」ルールです。家族・恋人など身近な二人だけで使う前提の、簡易的な保護であることを
+  ご理解のうえご利用ください。
 
 ## データのバックアップ
 

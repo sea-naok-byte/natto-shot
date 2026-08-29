@@ -12,6 +12,7 @@ import {
   buildMonthGrid, nthWeekdayLabel, generateRecurrenceDates, generateSpanDates, getHolidayName,
 } from "./lib/dates";
 import { TYPES, TYPE_ICON, STAMPS, EMOJIS } from "./lib/constants";
+import { enablePushNotifications, listenForegroundMessages } from "./lib/notifications";
 import {
   getSetup, createSetup,
   listenShifts, addShiftsBatch, deleteShiftSingle, deleteShiftGroupFuture, updateShiftFull, updateShiftGroupFields,
@@ -262,10 +263,26 @@ export default function App() {
   }, [messages, myRole, names]);
 
   async function requestNotifPermission() {
-    if (typeof Notification === "undefined") return;
-    const perm = await Notification.requestPermission();
-    setNotifPermission(perm);
+    const res = await enablePushNotifications(myRole);
+    setNotifPermission(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+    if (!res.ok) console.warn("push not enabled:", res.reason);
   }
+
+  function sendTestNotification() {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    try {
+      new Notification("テスト通知です", { body: "このように、相手からのメッセージも通知されます" });
+    } catch {}
+  }
+
+  // アプリを開いている(フォアグラウンド)ときに届いたプッシュ通知を画面に表示する
+  useEffect(() => {
+    if (!myRole) return;
+    listenForegroundMessages((payload) => {
+      const { title, body } = payload.notification || {};
+      try { new Notification(title || "なっとう", { body }); } catch {}
+    });
+  }, [myRole]);
 
   /* ---- auth ---- */
   async function handleSetupSubmit() {
@@ -367,7 +384,7 @@ export default function App() {
       if (dates.length > 1) groupId = uid();
     }
     const newEntries = dates.map((dt) => ({ date: dt, groupId, ...base }));
-    await addShiftsBatch(newEntries);
+    await addShiftsBatch(newEntries, myRole);
     if (isMeet) markSeen("meet");
     setShowForm(false);
     resetForm();
@@ -382,8 +399,8 @@ export default function App() {
   function handleMeetupChange(entry, field, value) {
     meetActivityRef.current = Date.now();
     markSeen("meet");
-    if (entry.isGroup) updateShiftGroupFields(entry.groupId, { [field]: value });
-    else updateShiftFull(entry.id, { [field]: value });
+    if (entry.isGroup) updateShiftGroupFields(entry.groupId, { [field]: value }, myRole);
+    else updateShiftFull(entry.id, { [field]: value }, myRole);
   }
 
   /* ---- derived ---- */
@@ -484,19 +501,27 @@ export default function App() {
 
   const hasNewChat = useMemo(() => {
     if (messages.length === 0) return false;
-    return messages[messages.length - 1].ts > getLastSeen("chat");
+    const newest = messages[messages.length - 1];
+    return newest.person !== myRole && newest.ts > getLastSeen("chat");
   }, [messages, seenVersion, myRole]);
 
   const hasNewMeet = useMemo(() => {
     const meetEntries = shifts.filter((e) => e.type === "合流");
     if (meetEntries.length === 0) return false;
-    const latest = Math.max(...meetEntries.map((e) => e.updatedAt || e.createdAt || 0));
-    return latest > getLastSeen("meet");
+    let latestEntry = meetEntries[0];
+    meetEntries.forEach((e) => {
+      const t = e.updatedAt || e.createdAt || 0;
+      const bestT = latestEntry.updatedAt || latestEntry.createdAt || 0;
+      if (t > bestT) latestEntry = e;
+    });
+    const t = latestEntry.updatedAt || latestEntry.createdAt || 0;
+    return !!latestEntry.updatedBy && latestEntry.updatedBy !== myRole && t > getLastSeen("meet");
   }, [shifts, seenVersion, myRole]);
 
   const hasNewDiary = useMemo(() => {
-    if (diary.length === 0) return false;
-    const latest = Math.max(...diary.map((e) => e.updatedAt || 0));
+    const otherEntries = diary.filter((e) => e.person !== myRole);
+    if (otherEntries.length === 0) return false;
+    const latest = Math.max(...otherEntries.map((e) => e.updatedAt || 0));
     return latest > getLastSeen("diary");
   }, [diary, seenVersion, myRole]);
 
@@ -576,6 +601,17 @@ export default function App() {
         </div>
         {notifPermission === "default" && (
           <button className="ft-notifbtn" onClick={requestNotifPermission}><Bell size={12} /> チャット通知を有効にする</button>
+        )}
+        {notifPermission === "granted" && (
+          <div className="ft-notif-status ok">
+            <Bell size={12} /> チャット通知: 有効(アプリを閉じていても届きます)
+            <button className="ft-notif-test" onClick={sendTestNotification}>テスト通知を送る</button>
+          </div>
+        )}
+        {notifPermission === "denied" && (
+          <div className="ft-notif-status blocked">
+            <Bell size={12} /> 通知がブロックされています。ブラウザの設定から通知を許可してください。
+          </div>
         )}
 
         {tab === "schedule" && (
@@ -1014,8 +1050,8 @@ export default function App() {
           names={names}
           onClose={() => setEditTarget(null)}
           onSave={async (patch) => {
-            if (editTarget.isGroup) await updateShiftGroupFields(editTarget.groupId, patch);
-            else await updateShiftFull(editTarget.id, patch);
+            if (editTarget.isGroup) await updateShiftGroupFields(editTarget.groupId, patch, myRole);
+            else await updateShiftFull(editTarget.id, patch, myRole);
             if (editTarget.type === "合流" || patch.type === "合流") markSeen("meet");
             setEditTarget(null);
           }}

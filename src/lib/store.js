@@ -39,10 +39,10 @@ export function listenShifts(callback) {
   });
 }
 
-export async function addShiftsBatch(entries) {
+export async function addShiftsBatch(entries, by) {
   const batch = writeBatch(db);
   const now = Date.now();
-  entries.forEach((entry) => batch.set(doc(collection(db, "shifts")), { ...entry, createdAt: now }));
+  entries.forEach((entry) => batch.set(doc(collection(db, "shifts")), { ...entry, createdAt: now, updatedAt: now, updatedBy: by }));
   await batch.commit();
 }
 
@@ -58,15 +58,15 @@ export async function deleteShiftGroupFuture(groupId, fromDate) {
   await batch.commit();
 }
 
-export async function updateShiftFull(id, patch) {
-  await updateDoc(doc(db, "shifts", id), { ...patch, updatedAt: Date.now() });
+export async function updateShiftFull(id, patch, by) {
+  await updateDoc(doc(db, "shifts", id), { ...patch, updatedAt: Date.now(), updatedBy: by });
 }
 
-export async function updateShiftGroupFields(groupId, patch) {
+export async function updateShiftGroupFields(groupId, patch, by) {
   const q = query(collection(db, "shifts"), where("groupId", "==", groupId));
   const snap = await getDocs(q);
   const batch = writeBatch(db);
-  snap.docs.forEach((d) => batch.update(d.ref, { ...patch, updatedAt: Date.now() }));
+  snap.docs.forEach((d) => batch.update(d.ref, { ...patch, updatedAt: Date.now(), updatedBy: by }));
   await batch.commit();
 }
 
