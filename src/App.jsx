@@ -12,7 +12,7 @@ import {
   buildMonthGrid, nthWeekdayLabel, generateRecurrenceDates, generateSpanDates, getHolidayName,
 } from "./lib/dates";
 import { TYPES, TYPE_ICON, STAMPS, EMOJIS } from "./lib/constants";
-import { enablePushNotifications, listenForegroundMessages } from "./lib/notifications";
+import { enablePushNotifications, disablePushNotifications, isPushRegistered, listenForegroundMessages, showLocalNotification } from "./lib/notifications";
 import {
   getSetup, createSetup,
   listenShifts, addShiftsBatch, deleteShiftSingle, deleteShiftGroupFuture, updateShiftFull, updateShiftGroupFields,
@@ -114,6 +114,7 @@ export default function App() {
   const [notifPermission, setNotifPermission] = useState(() =>
     typeof Notification !== "undefined" ? Notification.permission : "unsupported"
   );
+  const [pushOn, setPushOn] = useState(() => isPushRegistered(localStorage.getItem("ft_role") || ""));
 
   const chatEndRef = useRef(null);
   const chatBodyRef = useRef(null);
@@ -256,7 +257,7 @@ export default function App() {
       if (showIt && typeof Notification !== "undefined" && Notification.permission === "granted") {
         const senderName = names ? names[newest.person] : "相手";
         const body = newest.type === "stamp" ? "スタンプが届きました" : newest.content;
-        try { new Notification(`${senderName}より`, { body }); } catch {}
+        showLocalNotification(`${senderName}より`, body);
       }
     }
     lastMsgIdRef.current = newest.id;
@@ -265,14 +266,17 @@ export default function App() {
   async function requestNotifPermission() {
     const res = await enablePushNotifications(myRole);
     setNotifPermission(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+    setPushOn(res.ok);
     if (!res.ok) console.warn("push not enabled:", res.reason);
   }
 
+  async function handleDisablePush() {
+    await disablePushNotifications(myRole);
+    setPushOn(false);
+  }
+
   function sendTestNotification() {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    try {
-      new Notification("テスト通知です", { body: "このように、相手からのメッセージも通知されます" });
-    } catch {}
+    showLocalNotification("テスト通知です", "このように、相手からのメッセージも通知されます");
   }
 
   // アプリを開いている(フォアグラウンド)ときに届いたプッシュ通知を画面に表示する
@@ -280,7 +284,7 @@ export default function App() {
     if (!myRole) return;
     listenForegroundMessages((payload) => {
       const { title, body } = payload.notification || {};
-      try { new Notification(title || "なっとう", { body }); } catch {}
+      showLocalNotification(title || "なっとう", body || "");
     });
   }, [myRole]);
 
@@ -602,10 +606,17 @@ export default function App() {
         {notifPermission === "default" && (
           <button className="ft-notifbtn" onClick={requestNotifPermission}><Bell size={12} /> チャット通知を有効にする</button>
         )}
-        {notifPermission === "granted" && (
+        {notifPermission === "granted" && pushOn && (
           <div className="ft-notif-status ok">
             <Bell size={12} /> チャット通知: 有効(アプリを閉じていても届きます)
             <button className="ft-notif-test" onClick={sendTestNotification}>テスト通知を送る</button>
+            <button className="ft-notif-test" onClick={handleDisablePush}>通知を無効にする</button>
+          </div>
+        )}
+        {notifPermission === "granted" && !pushOn && (
+          <div className="ft-notif-status blocked">
+            <Bell size={12} /> チャット通知: 無効
+            <button className="ft-notif-test" onClick={requestNotifPermission}>通知を有効にする</button>
           </div>
         )}
         {notifPermission === "denied" && (
