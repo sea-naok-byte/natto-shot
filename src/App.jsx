@@ -121,7 +121,6 @@ export default function App() {
   const isNearBottomRef = useRef(true);
   const prevScrollHeightRef = useRef(0);
   const tabRef = useRef(tab);
-  const lastMsgIdRef = useRef(null);
   const [seenVersion, setSeenVersion] = useState(0);
 
   useEffect(() => { tabRef.current = tab; }, [tab]);
@@ -248,21 +247,6 @@ export default function App() {
     if (unread.length > 0) markMessagesRead(unread, myRole);
   }, [tab, messages, myRole]);
 
-  /* ---- 通知(フォアグラウンド。タブを開いている間のみ) ---- */
-  useEffect(() => {
-    if (!myRole || messages.length === 0) return;
-    const newest = messages[messages.length - 1];
-    if (lastMsgIdRef.current && newest.id !== lastMsgIdRef.current && newest.person !== myRole) {
-      const showIt = tabRef.current !== "chat" || (typeof document !== "undefined" && document.hidden);
-      if (showIt && typeof Notification !== "undefined" && Notification.permission === "granted") {
-        const senderName = names ? names[newest.person] : "相手";
-        const body = newest.type === "stamp" ? "スタンプが届きました" : newest.content;
-        showLocalNotification(`${senderName}より`, body);
-      }
-    }
-    lastMsgIdRef.current = newest.id;
-  }, [messages, myRole, names]);
-
   async function requestNotifPermission() {
     const res = await enablePushNotifications(myRole);
     setNotifPermission(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
@@ -279,10 +263,13 @@ export default function App() {
     showLocalNotification("テスト通知です", "このように、相手からのメッセージも通知されます");
   }
 
-  // アプリを開いている(フォアグラウンド)ときに届いたプッシュ通知を画面に表示する
+  // プッシュ通知(Cloud Functions経由)がフォアグラウンドで届いたときに表示する。
+  // 今まさにチャット画面を見ているときは、二重に気づかせないよう通知を出さない。
   useEffect(() => {
     if (!myRole) return;
     listenForegroundMessages((payload) => {
+      const showIt = tabRef.current !== "chat" || (typeof document !== "undefined" && document.hidden);
+      if (!showIt) return;
       const { title, body } = payload.notification || {};
       showLocalNotification(title || "なっとう", body || "");
     });
