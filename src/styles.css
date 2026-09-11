@@ -187,6 +187,7 @@
 .ft-switch-link { background: none; border: none; color: var(--chrome); font-size: 12px; text-decoration: underline; cursor: pointer; padding: 4px 0 0; text-align: center; }
 .ft-error { color: var(--danger); font-size: 12px; }
 .ft-link { color: var(--chrome); text-decoration: underline; word-break: break-all; }
+.ft-want-address { display: block; font-size: 11px; color: var(--muted); text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ft-role-btn { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; color: var(--text); font-size: 14px; font-weight: 700; cursor: pointer; }
 .ft-role-btn:hover { border-color: var(--chrome); }
 .ft-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 40px 0; justify-content: center; }

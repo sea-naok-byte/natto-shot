@@ -3,7 +3,7 @@ import { collection, getDocs, writeBatch } from "firebase/firestore";
 import {
   Calendar as CalendarIcon, MessageCircle, LogOut, Plus, X, Send,
   ChevronLeft, ChevronRight, ChevronDown, Search, Smile, Sparkles, CheckCheck, Lock,
-  Heart, BookOpen, MoreHorizontal, RefreshCw, Pencil, Phone, Trash2, ArrowDown, Star, MapPin,
+  Heart, BookOpen, MoreHorizontal, RefreshCw, Pencil, Phone, Trash2, ArrowDown, Star, MapPin, ExternalLink,
 } from "lucide-react";
 
 import { db, ensureSignedIn } from "./firebase";
@@ -54,6 +54,16 @@ function normalizeUrl(u) {
   const trimmed = u.trim();
   if (!trimmed) return "";
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+// 表示上は郵便番号(「〒123-4567」「123-4567」など先頭の部分)を省く
+function stripPostalCode(address) {
+  if (!address) return "";
+  return address.replace(/^\s*〒?\s*\d{3}-?\d{4}\s*/, "").trim();
+}
+
+function googleMapsUrl(address) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
 export default function App() {
@@ -1082,23 +1092,33 @@ export default function App() {
                   const visited = filtered.filter((w) => w.visited).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
                   const renderTile = (w) => {
                     const isOpen = q ? true : expandedWantId === w.id;
+                    const displayAddress = stripPostalCode(w.address);
                     return (
                       <div className="ft-slim-wrap" key={w.id}>
-                        <div className={`ft-slim-tile ${isOpen ? "open" : ""}`} style={{ flexDirection: "column", alignItems: "stretch", gap: 3 }}
+                        <div className={`ft-slim-tile ${isOpen ? "open" : ""}`} style={{ flexDirection: "column", alignItems: "stretch", gap: 1, padding: "6px 10px" }}
                           onClick={() => setExpandedWantId(isOpen ? null : w.id)}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <MapPin size={13} color="var(--record)" />
-                            <span style={{ fontWeight: 700, fontSize: 13, flex: 1 }}>{w.place || "(名称未設定)"}</span>
-                            <ChevronDown size={15} className="ft-slim-chevron" />
-                          </div>
-                          <div style={{ fontSize: 11.5, color: "var(--muted)", paddingLeft: 21, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            {w.address && <span>{w.address}</span>}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <MapPin size={12} color="var(--record)" style={{ flexShrink: 0 }} />
+                            <span style={{ fontWeight: 700, fontSize: 12.5, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {w.place || "(名称未設定)"}
+                            </span>
                             {w.url && (
-                              <a href={normalizeUrl(w.url)} target="_blank" rel="noopener noreferrer" className="ft-link" onClick={(ev) => ev.stopPropagation()}>
-                                🔗 サイトを見る
+                              <a href={normalizeUrl(w.url)} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}
+                                title="ホームページを開く" style={{ display: "flex", color: "var(--record)", flexShrink: 0 }}>
+                                <ExternalLink size={13} />
                               </a>
                             )}
-                            {!w.address && !w.url && <span>詳細未入力</span>}
+                            <ChevronDown size={14} className="ft-slim-chevron" style={{ flexShrink: 0 }} />
+                          </div>
+                          <div style={{ paddingLeft: 18 }}>
+                            {displayAddress ? (
+                              <a href={googleMapsUrl(w.address)} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}
+                                title="Googleマップで開く" className="ft-want-address">
+                                {displayAddress}
+                              </a>
+                            ) : (
+                              <span className="ft-want-address" style={{ opacity: 0.55 }}>住所未入力</span>
+                            )}
                           </div>
                         </div>
                         {isOpen && <div className="ft-slim-detail"><WantCard want={w} onChange={handleWantFieldChange} onDelete={() => deleteWant(w.id)} /></div>}
