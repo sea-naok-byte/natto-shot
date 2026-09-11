@@ -25,8 +25,6 @@
 .ft-title { font-family: 'Noto Serif JP', serif; font-weight: 700; font-size: 24px; margin: 0; color: var(--text); }
 .ft-logout { background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .ft-notif-btn { background: var(--surface-2); border: 1px solid var(--border); width: auto; height: 34px; padding: 0 10px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; font-weight: 700; }
-.ft-notif-x-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; color: var(--danger); }
-.ft-notif-x { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 22px; line-height: 1; color: var(--danger); pointer-events: none; }
 .ft-logout:hover { color: var(--danger); border-color: var(--danger); }
 .ft-rolebar { display: flex; align-items: center; gap: 6px; margin: 4px 0 8px; font-size: 12px; color: var(--muted); }
 .ft-rolebar button { background: none; border: none; color: var(--chrome); font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; }
@@ -162,19 +160,19 @@
 .ft-modal-title { font-family: 'Noto Serif JP', serif; font-size: 16px; font-weight: 700; }
 .ft-modal-close { background: var(--surface-2); border: none; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); }
 
-.ft-search-row { display: flex; align-items: center; gap: 7px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; margin-bottom: 14px; }
+.ft-search-row { display: flex; align-items: center; gap: 7px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
 .ft-search-input { flex: 1; border: none; background: none; font-size: 13px; font-family: inherit; color: var(--text); outline: none; }
 .ft-search-row button { background: none; border: none; color: var(--muted); cursor: pointer; display: flex; padding: 0; }
-.ft-meet-section-title { font-size: 12px; font-weight: 700; color: var(--muted); margin: 14px 0 8px; }
-.ft-meet-item { background: var(--meet-soft); border: 1px solid var(--meet); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
-.ft-slim-wrap { margin-bottom: 8px; }
-.ft-slim-tile { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
-.ft-slim-tile-date { flex: 1; text-align: left; font-size: 12.5px; font-weight: 700; }
+.ft-meet-section-title { font-size: 12px; font-weight: 700; color: var(--muted); margin: 6px 0 3px; }
+.ft-meet-item { background: var(--meet-soft); border: 1px solid var(--meet); border-radius: 12px; padding: 7px 10px; margin-bottom: 3px; }
+.ft-slim-wrap { margin-bottom: 3px; }
+.ft-slim-tile { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; cursor: pointer; }
+.ft-slim-tile-date { flex: 1; text-align: left; font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ft-slim-tile-edit { background: none; border: none; cursor: pointer; display: flex; padding: 2px; opacity: 0.8; }
 .ft-slim-tile-edit:hover { opacity: 1; }
 .ft-slim-chevron { color: var(--muted); transition: transform 0.15s ease; flex-shrink: 0; }
 .ft-slim-tile.open .ft-slim-chevron { transform: rotate(180deg); }
-.ft-slim-detail { margin-top: 6px; }
+.ft-slim-detail { margin-top: 3px; }
 .ft-meet-date { font-weight: 700; font-size: 13px; color: var(--meet); font-family: 'JetBrains Mono', monospace; }
 
 .ft-diary-box { margin-bottom: 12px; }
@@ -188,6 +186,7 @@
 .ft-error { color: var(--danger); font-size: 12px; }
 .ft-link { color: var(--chrome); text-decoration: underline; word-break: break-all; }
 .ft-want-address { display: block; font-size: 11px; color: var(--muted); text-decoration: underline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ft-want-link-btn { display: inline-flex; align-items: center; gap: 3px; padding: 4px 9px; border-radius: 999px; background: var(--record-soft); color: var(--record); font-size: 11px; font-weight: 700; flex-shrink: 0; white-space: nowrap; }
 .ft-role-btn { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; color: var(--text); font-size: 14px; font-weight: 700; cursor: pointer; }
 .ft-role-btn:hover { border-color: var(--chrome); }
 .ft-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 40px 0; justify-content: center; }

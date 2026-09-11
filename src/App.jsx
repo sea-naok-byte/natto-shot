@@ -66,6 +66,12 @@ function googleMapsUrl(address) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
+// 例: 2026.9/12土 のような、年込みで1行に収まる短い表記
+function fmtDateCompact(ds) {
+  const d = new Date(ds + "T00:00:00");
+  return `${d.getFullYear()}.${d.getMonth() + 1}/${d.getDate()}${WEEKDAY_JP[d.getDay()]}`;
+}
+
 export default function App() {
   const [booting, setBooting] = useState(true);
   const [metaExists, setMetaExists] = useState(null);
@@ -79,6 +85,10 @@ export default function App() {
   const [pwBusy, setPwBusy] = useState(false);
   const [suPassword, setSuPassword] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  function askConfirm(message, onConfirm) {
+    setConfirmAction({ message, onConfirm });
+  }
   const [resetting, setResetting] = useState(false);
 
   const [tab, setTab] = useState("schedule");
@@ -647,14 +657,10 @@ export default function App() {
               <button className="ft-notif-btn" style={{ color: "var(--record)" }} title="通知オン（タップでオフ）" onClick={handleDisablePush}>通知</button>
             )}
             {notifPermission !== "denied" && !(notifPermission === "granted" && pushOn) && (
-              <button className="ft-notif-btn" title="通知オフ（タップでオン）" onClick={requestNotifPermission}>
-                <span className="ft-notif-x-wrap">通知<span className="ft-notif-x">×</span></span>
-              </button>
+              <button className="ft-notif-btn" style={{ color: "var(--danger)" }} title="通知オフ（タップでオン）" onClick={requestNotifPermission}>通知なし</button>
             )}
             {notifPermission === "denied" && (
-              <button className="ft-notif-btn" title="通知がブロックされています（ブラウザ設定から許可してください）" onClick={requestNotifPermission}>
-                <span className="ft-notif-x-wrap">通知<span className="ft-notif-x">×</span></span>
-              </button>
+              <button className="ft-notif-btn" style={{ color: "var(--danger)" }} title="通知がブロックされています（ブラウザ設定から許可してください）" onClick={requestNotifPermission}>通知なし</button>
             )}
             {notifPermission === "granted" && pushOn && (
               <button className="ft-logout" title="テスト通知" onClick={sendTestNotification}><Send size={16} /></button>
@@ -838,9 +844,9 @@ export default function App() {
                             {!isMeet && e.comment && <div className="ft-entry-comment">{linkify(e.comment)}</div>}
                           </div>
                           <button className="ft-entry-edit" onClick={() => setEditTarget(e)}><Pencil size={13} /></button>
-                          <button className="ft-entry-del" onClick={() => (e.groupId ? setDeleteTarget(e) : handleDelete(e, "single"))}><X size={14} /></button>
+                          <button className="ft-entry-del" onClick={() => (e.groupId ? setDeleteTarget(e) : askConfirm("この予定を削除しますか？", () => handleDelete(e, "single")))}><X size={14} /></button>
                         </div>
-                        {isMeet && <MeetupEditor entry={e} onChange={handleMeetupChange} />}
+                        {isMeet && <MeetupEditor entry={e} onChange={handleMeetupChange} askConfirm={askConfirm} />}
                       </div>
                     );
                   })}
@@ -863,7 +869,7 @@ export default function App() {
                     {callsForDay.map((c) => (
                       <span className="ft-call-chip" key={c.id}>
                         <Phone size={11} /> {nameOf(c.person)}
-                        <button onClick={() => deleteCallRecord(c.id)}><X size={11} /></button>
+                        <button onClick={() => askConfirm("この電話の記録を削除しますか？", () => deleteCallRecord(c.id))}><X size={11} /></button>
                       </span>
                     ))}
                   </div>
@@ -948,7 +954,7 @@ export default function App() {
                           {!mine && nameOf(m.person)}
                           {new Date(m.ts).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
                           {read && <span className="ft-read"><CheckCheck size={11} /> 既読</span>}
-                          {mine && !read && <button className="ft-msg-delete" onClick={() => deleteChatMessage(m.id)} title="取り消す"><X size={10} /> 取り消し</button>}
+                          {mine && !read && <button className="ft-msg-delete" onClick={() => askConfirm("このメッセージを取り消しますか？", () => deleteChatMessage(m.id))} title="取り消す"><X size={10} /> 取り消し</button>}
                         </div>
                       </div>
                     </Fragment>
@@ -973,7 +979,7 @@ export default function App() {
 
         {tab === "meet" && (
           <div className="ft-card ft-chat">
-            <div className="ft-modal-title" style={{ color: "var(--meet)", marginBottom: 12 }}><Heart size={17} style={{ verticalAlign: "-3px", marginRight: 5 }} />合流の記録</div>
+            <div className="ft-modal-title" style={{ color: "var(--meet)", marginBottom: 6 }}><Heart size={17} style={{ verticalAlign: "-3px", marginRight: 5 }} />合流の記録</div>
             <div className="ft-search-row">
               <Search size={14} color="var(--muted)" />
               <input className="ft-search-input" placeholder="お店・回数・メモを検索" value={meetSearchQuery} onChange={(e) => setMeetSearchQuery(e.target.value)} />
@@ -985,14 +991,14 @@ export default function App() {
                   const q = meetSearchQuery.trim().toLowerCase();
                   const matches = (e) => {
                     if (!q) return true;
-                    const hay = [e.comment, e.meetPlan, e.meetMemory, e.meetCount, e.meetPlace].filter(Boolean).join(" ").toLowerCase();
+                    const placesText = (e.meetPlaces || []).map((p) => `${p.name} ${p.comment}`).join(" ");
+                    const hay = [e.comment, e.meetPlan, e.meetMemory, e.meetCount, e.meetPlace, placesText].filter(Boolean).join(" ").toLowerCase();
                     return hay.includes(q);
                   };
                   const future = meetups.future.filter(matches);
                   const past = meetups.past.filter(matches);
-                  const fmtDate = (ds) => new Date(ds + "T00:00:00").toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
                   const renderTile = (e) => {
-                    const dateLabel = e.isGroup ? `${fmtDate(e.dateStart)} 〜 ${fmtDate(e.dateEnd)}` : fmtDate(e.date);
+                    const dateLabel = e.isGroup ? `${fmtDateCompact(e.dateStart)}～${fmtDateCompact(e.dateEnd)}` : fmtDateCompact(e.date);
                     const isOpen = q ? true : expandedMeetId === e.id;
                     return (
                       <div className="ft-slim-wrap" key={e.id}>
@@ -1002,7 +1008,7 @@ export default function App() {
                           <button className="ft-slim-tile-edit" onClick={(ev) => { ev.stopPropagation(); meetActivityRef.current = Date.now(); setEditTarget(e); }}><Pencil size={13} color="var(--meet)" /></button>
                           <ChevronDown size={15} className="ft-slim-chevron" />
                         </div>
-                        {isOpen && <div className="ft-slim-detail"><MeetupItem entry={e} onChange={handleMeetupChange} hideHeader /></div>}
+                        {isOpen && <div className="ft-slim-detail"><MeetupItem entry={e} onChange={handleMeetupChange} askConfirm={askConfirm} hideHeader /></div>}
                       </div>
                     );
                   };
@@ -1024,7 +1030,7 @@ export default function App() {
 
         {tab === "diary" && (
           <div className="ft-card ft-chat">
-            <div className="ft-modal-title" style={{ color: "var(--record)", marginBottom: 12 }}><BookOpen size={17} style={{ verticalAlign: "-3px", marginRight: 5 }} />日記</div>
+            <div className="ft-modal-title" style={{ color: "var(--record)", marginBottom: 6 }}><BookOpen size={17} style={{ verticalAlign: "-3px", marginRight: 5 }} />日記</div>
             <div className="ft-search-row">
               <Search size={14} color="var(--muted)" />
               <input className="ft-search-input" placeholder="日記の内容を検索" value={diarySearchQuery} onChange={(e) => setDiarySearchQuery(e.target.value)} />
@@ -1044,7 +1050,7 @@ export default function App() {
                     const accent = item.a && item.b ? "var(--both)" : item.a ? "var(--gold)" : "var(--teal)";
                     const accentSoft = item.a && item.b ? "var(--both-soft)" : item.a ? "var(--gold-soft)" : "var(--teal-soft)";
                     const isOpen = q ? true : expandedDiaryDate === item.date;
-                    const dateLabel = new Date(item.date + "T00:00:00").toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
+                    const dateLabel = fmtDateCompact(item.date);
                     return (
                       <div className="ft-slim-wrap" key={item.date}>
                         <div className={`ft-slim-tile ${isOpen ? "open" : ""}`} style={{ borderColor: accent }}
@@ -1070,14 +1076,16 @@ export default function App() {
 
         {tab === "want" && (
           <div className="ft-card ft-chat">
-            <div className="ft-modal-title" style={{ color: "var(--record)", marginBottom: 12 }}><MapPin size={17} style={{ verticalAlign: "-3px", marginRight: 5 }} />行きたい</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <div className="ft-modal-title" style={{ color: "var(--record)" }}><MapPin size={17} style={{ verticalAlign: "-3px", marginRight: 5 }} />行きたい</div>
+              <button className="ft-add-btn" style={{ background: "var(--record)" }} onClick={handleAddWant}><Plus size={13} /> 追加</button>
+            </div>
             <div className="ft-search-row">
               <Search size={14} color="var(--muted)" />
               <input className="ft-search-input" placeholder="場所・住所・コメントを検索" value={wantSearchQuery} onChange={(e) => setWantSearchQuery(e.target.value)} />
               {wantSearchQuery && <button onClick={() => setWantSearchQuery("")}><X size={14} /></button>}
             </div>
-            <button className="ft-add-btn" style={{ background: "var(--record)", marginBottom: 10 }} onClick={handleAddWant}><Plus size={13} /> 追加</button>
-            {wantError && <div className="ft-error" style={{ marginBottom: 10 }}>{wantError}</div>}
+            {wantError && <div className="ft-error" style={{ marginBottom: 6 }}>{wantError}</div>}
             <div className="ft-chat-body-wrap">
               <div className="ft-chat-body">
                 {(() => {
@@ -1104,13 +1112,13 @@ export default function App() {
                             </span>
                             {w.url && (
                               <a href={normalizeUrl(w.url)} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}
-                                title="ホームページを開く" style={{ display: "flex", color: "var(--record)", flexShrink: 0 }}>
-                                <ExternalLink size={13} />
+                                title="ホームページを開く" className="ft-want-link-btn">
+                                <ExternalLink size={11} /> ページへ
                               </a>
                             )}
                             <ChevronDown size={14} className="ft-slim-chevron" style={{ flexShrink: 0 }} />
                           </div>
-                          <div style={{ paddingLeft: 18 }}>
+                          <div style={{ paddingLeft: 18, paddingTop: 2, paddingBottom: 2 }}>
                             {displayAddress ? (
                               <a href={googleMapsUrl(w.address)} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}
                                 title="Googleマップで開く" className="ft-want-address">
@@ -1121,7 +1129,7 @@ export default function App() {
                             )}
                           </div>
                         </div>
-                        {isOpen && <div className="ft-slim-detail"><WantCard want={w} onChange={handleWantFieldChange} onDelete={() => deleteWant(w.id)} /></div>}
+                        {isOpen && <div className="ft-slim-detail"><WantCard want={w} onChange={handleWantFieldChange} onDelete={() => askConfirm("この「行きたい」を削除しますか？", () => deleteWant(w.id))} /></div>}
                       </div>
                     );
                   };
@@ -1189,6 +1197,22 @@ export default function App() {
         />
       )}
 
+      {confirmAction && (
+        <div className="ft-modal-backdrop" onClick={() => setConfirmAction(null)}>
+          <div className="ft-modal" onClick={(ev) => ev.stopPropagation()}>
+            <div className="ft-modal-head">
+              <div className="ft-modal-title" style={{ color: "var(--danger)" }}>削除の確認</div>
+              <button className="ft-modal-close" onClick={() => setConfirmAction(null)}><X size={16} /></button>
+            </div>
+            <p style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 0 }}>{confirmAction.message}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button className="ft-btn-primary" style={{ background: "var(--danger)" }} onClick={() => { confirmAction.onConfirm(); setConfirmAction(null); }}>削除する</button>
+              <button className="ft-btn-ghost" onClick={() => setConfirmAction(null)}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showChatCleanup && (
         <div className="ft-modal-backdrop" onClick={() => setShowChatCleanup(false)}>
           <div className="ft-modal" onClick={(ev) => ev.stopPropagation()}>
@@ -1238,20 +1262,58 @@ export default function App() {
   );
 }
 
-function MeetupItem({ entry, onChange, onEdit, hideHeader }) {
+function MeetPlacesEditor({ places, onSave, askConfirm }) {
+  const [list, setList] = useState(places && places.length ? places : []);
+  useEffect(() => { setList(places && places.length ? places : []); }, [places]);
+
+  function updateRow(idx, field, value) {
+    setList((prev) => prev.map((p, i) => (i === idx ? { ...p, [field]: value } : p)));
+  }
+  function commitRow() {
+    onSave(list);
+  }
+  function addRow() {
+    const next = [...list, { name: "", comment: "" }];
+    setList(next);
+    onSave(next);
+  }
+  function removeRow(idx) {
+    askConfirm("このお店を削除しますか？", () => {
+      const next = list.filter((_, i) => i !== idx);
+      setList(next);
+      onSave(next);
+    });
+  }
+
+  return (
+    <div>
+      <div className="ft-meet-field-label">行ったお店</div>
+      {list.map((p, idx) => (
+        <div key={idx} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 8, marginTop: 6, background: "#fff" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input className="ft-meet-textarea" style={{ minHeight: "auto", flex: 1, marginTop: 0 }}
+              value={p.name} onChange={(e) => updateRow(idx, "name", e.target.value)} onBlur={commitRow} placeholder="例）〇〇食堂" />
+            <button className="ft-entry-del" onClick={() => removeRow(idx)}><X size={12} /></button>
+          </div>
+          <textarea className="ft-meet-textarea" value={p.comment} onChange={(e) => updateRow(idx, "comment", e.target.value)} onBlur={commitRow} placeholder="このお店についてのコメント" />
+        </div>
+      ))}
+      <button className="ft-btn-ghost" style={{ marginTop: 6, fontSize: 11.5, padding: "5px 12px" }} onClick={addRow}>+ お店を追加</button>
+    </div>
+  );
+}
+
+function MeetupItem({ entry, onChange, onEdit, hideHeader, askConfirm }) {
   const [plan, setPlan] = useState(entry.meetPlan || "");
   const [memory, setMemory] = useState(entry.meetMemory || "");
   const [count, setCount] = useState(entry.meetCount || "");
-  const [place, setPlace] = useState(entry.meetPlace || "");
   // entryは同じコンポーネントのまま(key/idが変わらない)更新されることがあるため、
   // 保存された値が変わったらローカルの入力欄も追従させる(そうしないと編集モーダルでの
   // 保存がFirestore上には反映されているのに、この画面では反映されていないように見えてしまう)
   useEffect(() => { setPlan(entry.meetPlan || ""); }, [entry.meetPlan]);
   useEffect(() => { setMemory(entry.meetMemory || ""); }, [entry.meetMemory]);
   useEffect(() => { setCount(entry.meetCount || ""); }, [entry.meetCount]);
-  useEffect(() => { setPlace(entry.meetPlace || ""); }, [entry.meetPlace]);
-  const fmtDate = (ds) => new Date(ds + "T00:00:00").toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
-  const dateLabel = entry.isGroup ? `${fmtDate(entry.dateStart)} 〜 ${fmtDate(entry.dateEnd)}` : fmtDate(entry.date);
+  const dateLabel = entry.isGroup ? `${fmtDateCompact(entry.dateStart)}～${fmtDateCompact(entry.dateEnd)}` : fmtDateCompact(entry.date);
   const targetDate = entry.isGroup ? entry.dateStart : entry.date;
   return (
     <div className="ft-meet-item">
@@ -1263,16 +1325,9 @@ function MeetupItem({ entry, onChange, onEdit, hideHeader }) {
       )}
       {entry.isGroup && <div className="ft-hint" style={{ marginTop: 2 }}>連続した{Math.round((new Date(entry.dateEnd) - new Date(entry.dateStart)) / 86400000) + 1}日間の合流をまとめて表示しています</div>}
       {entry.comment && <div style={{ fontSize: 12, marginTop: 4 }}>{linkify(entry.comment)}</div>}
-      <div className="ft-form-row" style={{ marginTop: 8 }}>
-        <div style={{ flex: 1 }}>
-          <div className="ft-meet-field-label">回数</div>
-          <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div className="ft-meet-field-label">行ったお店</div>
-          <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={place} onChange={(e) => setPlace(e.target.value)} onBlur={() => onChange(entry, "meetPlace", place)} placeholder="例）〇〇食堂" />
-        </div>
-      </div>
+      <div className="ft-meet-field-label" style={{ marginTop: 8 }}>回数</div>
+      <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
+      <MeetPlacesEditor places={entry.meetPlaces} onSave={(places) => onChange(entry, "meetPlaces", places)} askConfirm={askConfirm} />
       <div className="ft-meet-field-label">備考（相談・段取りメモ）</div>
       <textarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
       {!isFutureDate(targetDate) && (
@@ -1286,32 +1341,23 @@ function MeetupItem({ entry, onChange, onEdit, hideHeader }) {
   );
 }
 
-function MeetupEditor({ entry, onChange }) {
+function MeetupEditor({ entry, onChange, askConfirm }) {
   const [comment, setComment] = useState(entry.comment || "");
   const [plan, setPlan] = useState(entry.meetPlan || "");
   const [memory, setMemory] = useState(entry.meetMemory || "");
   const [count, setCount] = useState(entry.meetCount || "");
-  const [place, setPlace] = useState(entry.meetPlace || "");
   // 編集モーダルなど別の場所での保存も、ここの表示に反映されるようにする
   useEffect(() => { setComment(entry.comment || ""); }, [entry.comment]);
   useEffect(() => { setPlan(entry.meetPlan || ""); }, [entry.meetPlan]);
   useEffect(() => { setMemory(entry.meetMemory || ""); }, [entry.meetMemory]);
   useEffect(() => { setCount(entry.meetCount || ""); }, [entry.meetCount]);
-  useEffect(() => { setPlace(entry.meetPlace || ""); }, [entry.meetPlace]);
   return (
     <div style={{ width: "100%" }}>
       <div className="ft-meet-field-label">コメント</div>
       <textarea className="ft-meet-textarea" value={comment} onChange={(e) => setComment(e.target.value)} onBlur={() => onChange(entry, "comment", comment)} />
-      <div className="ft-form-row" style={{ marginTop: 6 }}>
-        <div style={{ flex: 1 }}>
-          <div className="ft-meet-field-label">回数</div>
-          <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div className="ft-meet-field-label">行ったお店</div>
-          <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={place} onChange={(e) => setPlace(e.target.value)} onBlur={() => onChange(entry, "meetPlace", place)} placeholder="例）〇〇食堂" />
-        </div>
-      </div>
+      <div className="ft-meet-field-label" style={{ marginTop: 6 }}>回数</div>
+      <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
+      <MeetPlacesEditor places={entry.meetPlaces} onSave={(places) => onChange(entry, "meetPlaces", places)} askConfirm={askConfirm} />
       <div className="ft-meet-field-label">備考（相談・段取りメモ）</div>
       <textarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
       {!isFutureDate(entry.date) && (
@@ -1381,7 +1427,6 @@ function EditEntryModal({ entry, names, onSave, onClose }) {
   const [meetPlan, setMeetPlan] = useState(entry.meetPlan || "");
   const [meetMemory, setMeetMemory] = useState(entry.meetMemory || "");
   const [meetCount, setMeetCount] = useState(entry.meetCount || "");
-  const [meetPlace, setMeetPlace] = useState(entry.meetPlace || "");
   const isMeet = type === "合流";
   const targetDate = entry.isGroup ? entry.dateStart : entry.date;
 
@@ -1396,7 +1441,6 @@ function EditEntryModal({ entry, names, onSave, onClose }) {
       meetPlan: isMeet ? meetPlan : "",
       meetMemory: isMeet && !isFutureDate(targetDate) ? meetMemory : "",
       meetCount: isMeet ? meetCount : "",
-      meetPlace: isMeet ? meetPlace : "",
     });
   }
 
@@ -1433,10 +1477,8 @@ function EditEntryModal({ entry, names, onSave, onClose }) {
           <div><label className="ft-label">コメント</label><textarea className="ft-input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} /></div>
           {isMeet && (
             <>
-              <div className="ft-form-row">
-                <div style={{ flex: 1 }}><label className="ft-label">回数</label><input className="ft-input" value={meetCount} onChange={(e) => setMeetCount(e.target.value)} placeholder="例）12回目" /></div>
-                <div style={{ flex: 1 }}><label className="ft-label">行ったお店</label><input className="ft-input" value={meetPlace} onChange={(e) => setMeetPlace(e.target.value)} placeholder="例）〇〇食堂" /></div>
-              </div>
+              <div><label className="ft-label">回数</label><input className="ft-input" value={meetCount} onChange={(e) => setMeetCount(e.target.value)} placeholder="例）12回目" /></div>
+              <div className="ft-hint">行ったお店(複数登録・お店ごとのコメント)は、この画面を閉じた後、合流の欄から直接編集できます</div>
               <div><label className="ft-label">備考（相談・段取りメモ）</label><textarea className="ft-input" rows={2} value={meetPlan} onChange={(e) => setMeetPlan(e.target.value)} /></div>
               {!isFutureDate(targetDate) && (
                 <div><label className="ft-label">思い出の記録</label><textarea className="ft-input" rows={2} value={meetMemory} onChange={(e) => setMeetMemory(e.target.value)} /></div>
