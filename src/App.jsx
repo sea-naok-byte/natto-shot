@@ -419,12 +419,29 @@ export default function App() {
     else updateShiftFull(entry.id, { [field]: value }, myRole);
   }
 
-  function handleAddWant() {
-    addWant({ place: "", url: "", address: "", comment: "", visited: false }, myRole);
+  const [wantError, setWantError] = useState("");
+
+  async function handleAddWant() {
+    setWantError("");
+    try {
+      await addWant({ place: "", url: "", address: "", comment: "", visited: false }, myRole);
+    } catch (e) {
+      console.error("行きたいの追加に失敗:", e);
+      setWantError(
+        e?.code === "permission-denied"
+          ? "追加できませんでした(権限エラー)。Firestoreのルールが反映されているか確認してください。"
+          : `追加できませんでした: ${e?.message || e}`
+      );
+    }
   }
 
-  function handleWantFieldChange(want, field, value) {
-    updateWant(want.id, { [field]: value });
+  async function handleWantFieldChange(want, field, value) {
+    try {
+      await updateWant(want.id, { [field]: value });
+    } catch (e) {
+      console.error("行きたいの更新に失敗:", e);
+      setWantError(e?.message || "更新に失敗しました");
+    }
   }
 
   /* ---- derived ---- */
@@ -1054,6 +1071,7 @@ export default function App() {
               {wantSearchQuery && <button onClick={() => setWantSearchQuery("")}><X size={14} /></button>}
             </div>
             <button className="ft-add-btn" style={{ background: "var(--record)", marginBottom: 10 }} onClick={handleAddWant}><Plus size={13} /> 追加</button>
+            {wantError && <div className="ft-error" style={{ marginBottom: 10 }}>{wantError}</div>}
             <div className="ft-chat-body-wrap">
               <div className="ft-chat-body">
                 {(() => {
