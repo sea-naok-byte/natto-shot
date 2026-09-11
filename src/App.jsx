@@ -3,7 +3,7 @@ import { collection, getDocs, writeBatch } from "firebase/firestore";
 import {
   Calendar as CalendarIcon, MessageCircle, LogOut, Plus, X, Send,
   ChevronLeft, ChevronRight, ChevronDown, Search, Smile, Sparkles, CheckCheck, Lock,
-  Heart, BookOpen, MoreHorizontal, RefreshCw, Bell, Pencil, Phone, Trash2, ArrowDown, Star, MapPin,
+  Heart, BookOpen, MoreHorizontal, RefreshCw, Bell, BellOff, Pencil, Phone, Trash2, ArrowDown, Star, MapPin,
 } from "lucide-react";
 
 import { db, ensureSignedIn } from "./firebase";
@@ -632,6 +632,18 @@ export default function App() {
           <h1 className="ft-title ft-display">なっとう</h1>
           <div style={{ display: "flex", gap: 6 }}>
             {DEMO_MODE && <button className="ft-logout" title="テスト用：全データを消す" onClick={() => setShowResetConfirm(true)}><Trash2 size={16} /></button>}
+            {notifPermission === "granted" && pushOn && (
+              <button className="ft-logout" style={{ color: "var(--record)" }} title="通知オン（タップでオフ）" onClick={handleDisablePush}><Bell size={16} /></button>
+            )}
+            {notifPermission !== "denied" && !(notifPermission === "granted" && pushOn) && (
+              <button className="ft-logout" title="通知オフ（タップでオン）" onClick={requestNotifPermission}><BellOff size={16} /></button>
+            )}
+            {notifPermission === "denied" && (
+              <button className="ft-logout" style={{ color: "var(--danger)" }} title="通知がブロックされています（ブラウザ設定から許可してください）" onClick={requestNotifPermission}><BellOff size={16} /></button>
+            )}
+            {notifPermission === "granted" && pushOn && (
+              <button className="ft-logout" title="テスト通知" onClick={sendTestNotification}><Send size={16} /></button>
+            )}
             <button className="ft-logout" title="更新" onClick={() => window.location.reload()}><RefreshCw size={16} /></button>
             <button className="ft-logout" title="ログアウト" onClick={handleLogout}><LogOut size={16} /></button>
           </div>
@@ -641,27 +653,6 @@ export default function App() {
           {nameOf(myRole)} として表示中
           {DEMO_MODE && <button onClick={switchRole}>切替（デモ中のみ）</button>}
         </div>
-        {notifPermission === "default" && (
-          <button className="ft-notifbtn" onClick={requestNotifPermission}><Bell size={12} /> チャット通知を有効にする</button>
-        )}
-        {notifPermission === "granted" && pushOn && (
-          <div className="ft-notif-status ok">
-            <Bell size={12} /> チャット通知: 有効(アプリを閉じていても届きます)
-            <button className="ft-notif-test" onClick={sendTestNotification}>テスト通知を送る</button>
-            <button className="ft-notif-test" onClick={handleDisablePush}>通知を無効にする</button>
-          </div>
-        )}
-        {notifPermission === "granted" && !pushOn && (
-          <div className="ft-notif-status blocked">
-            <Bell size={12} /> チャット通知: 無効
-            <button className="ft-notif-test" onClick={requestNotifPermission}>通知を有効にする</button>
-          </div>
-        )}
-        {notifPermission === "denied" && (
-          <div className="ft-notif-status blocked">
-            <Bell size={12} /> 通知がブロックされています。ブラウザの設定から通知を許可してください。
-          </div>
-        )}
 
         {tab === "schedule" && (
           <>

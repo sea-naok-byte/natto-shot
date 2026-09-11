@@ -30,5 +30,9 @@ service cloud.firestore {
     match /fcmTokens/{doc} {
       allow read, write: if request.auth != null;
     }
+
+    match /wants/{doc} {
+      allow read, write: if request.auth != null;
+    }
   }
 }
