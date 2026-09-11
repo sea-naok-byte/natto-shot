@@ -3,7 +3,7 @@ import { collection, getDocs, writeBatch } from "firebase/firestore";
 import {
   Calendar as CalendarIcon, MessageCircle, LogOut, Plus, X, Send,
   ChevronLeft, ChevronRight, ChevronDown, Search, Smile, Sparkles, CheckCheck, Lock,
-  Heart, BookOpen, MoreHorizontal, RefreshCw, Bell, BellOff, Pencil, Phone, Trash2, ArrowDown, Star, MapPin,
+  Heart, BookOpen, MoreHorizontal, RefreshCw, Pencil, Phone, Trash2, ArrowDown, Star, MapPin,
 } from "lucide-react";
 
 import { db, ensureSignedIn } from "./firebase";
@@ -81,6 +81,7 @@ export default function App() {
   const [calls, setCalls] = useState([]);
   const [wants, setWants] = useState([]);
   const [wantSearchQuery, setWantSearchQuery] = useState("");
+  const [expandedWantId, setExpandedWantId] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -633,13 +634,17 @@ export default function App() {
           <div style={{ display: "flex", gap: 6 }}>
             {DEMO_MODE && <button className="ft-logout" title="テスト用：全データを消す" onClick={() => setShowResetConfirm(true)}><Trash2 size={16} /></button>}
             {notifPermission === "granted" && pushOn && (
-              <button className="ft-logout" style={{ color: "var(--record)" }} title="通知オン（タップでオフ）" onClick={handleDisablePush}><Bell size={16} /></button>
+              <button className="ft-notif-btn" style={{ color: "var(--record)" }} title="通知オン（タップでオフ）" onClick={handleDisablePush}>通知</button>
             )}
             {notifPermission !== "denied" && !(notifPermission === "granted" && pushOn) && (
-              <button className="ft-logout" title="通知オフ（タップでオン）" onClick={requestNotifPermission}><BellOff size={16} /></button>
+              <button className="ft-notif-btn" title="通知オフ（タップでオン）" onClick={requestNotifPermission}>
+                <span className="ft-notif-x-wrap">通知<span className="ft-notif-x">×</span></span>
+              </button>
             )}
             {notifPermission === "denied" && (
-              <button className="ft-logout" style={{ color: "var(--danger)" }} title="通知がブロックされています（ブラウザ設定から許可してください）" onClick={requestNotifPermission}><BellOff size={16} /></button>
+              <button className="ft-notif-btn" title="通知がブロックされています（ブラウザ設定から許可してください）" onClick={requestNotifPermission}>
+                <span className="ft-notif-x-wrap">通知<span className="ft-notif-x">×</span></span>
+              </button>
             )}
             {notifPermission === "granted" && pushOn && (
               <button className="ft-logout" title="テスト通知" onClick={sendTestNotification}><Send size={16} /></button>
@@ -1069,24 +1074,45 @@ export default function App() {
                   const q = wantSearchQuery.trim().toLowerCase();
                   const matches = (w) => {
                     if (!q) return true;
-                    const hay = [w.place, w.address, w.comment, w.url].filter(Boolean).join(" ").toLowerCase();
+                    const hay = [w.place, w.address, w.comment, w.url, w.impression].filter(Boolean).join(" ").toLowerCase();
                     return hay.includes(q);
                   };
                   const filtered = wants.filter(matches);
                   const notVisited = filtered.filter((w) => !w.visited).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
                   const visited = filtered.filter((w) => w.visited).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                  const renderTile = (w) => {
+                    const isOpen = q ? true : expandedWantId === w.id;
+                    return (
+                      <div className="ft-slim-wrap" key={w.id}>
+                        <div className={`ft-slim-tile ${isOpen ? "open" : ""}`} style={{ flexDirection: "column", alignItems: "stretch", gap: 3 }}
+                          onClick={() => setExpandedWantId(isOpen ? null : w.id)}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <MapPin size={13} color="var(--record)" />
+                            <span style={{ fontWeight: 700, fontSize: 13, flex: 1 }}>{w.place || "(名称未設定)"}</span>
+                            <ChevronDown size={15} className="ft-slim-chevron" />
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--muted)", paddingLeft: 21, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            {w.address && <span>{w.address}</span>}
+                            {w.url && (
+                              <a href={normalizeUrl(w.url)} target="_blank" rel="noopener noreferrer" className="ft-link" onClick={(ev) => ev.stopPropagation()}>
+                                🔗 サイトを見る
+                              </a>
+                            )}
+                            {!w.address && !w.url && <span>詳細未入力</span>}
+                          </div>
+                        </div>
+                        {isOpen && <div className="ft-slim-detail"><WantCard want={w} onChange={handleWantFieldChange} onDelete={() => deleteWant(w.id)} /></div>}
+                      </div>
+                    );
+                  };
                   return (
                     <>
                       <div className="ft-meet-section-title" style={{ marginTop: 0 }}>行きたい（{notVisited.length}）</div>
                       {notVisited.length === 0 && <div className="ft-empty">{q ? "見つかりませんでした" : "まだ登録がありません"}</div>}
-                      {notVisited.map((w) => (
-                        <WantCard key={w.id} want={w} onChange={handleWantFieldChange} onDelete={() => deleteWant(w.id)} />
-                      ))}
+                      {notVisited.map(renderTile)}
                       <div className="ft-meet-section-title">行った（{visited.length}）</div>
                       {visited.length === 0 && <div className="ft-empty">{q ? "見つかりませんでした" : "まだありません"}</div>}
-                      {visited.map((w) => (
-                        <WantCard key={w.id} want={w} onChange={handleWantFieldChange} onDelete={() => deleteWant(w.id)} />
-                      ))}
+                      {visited.map(renderTile)}
                     </>
                   );
                 })()}
@@ -1284,10 +1310,14 @@ function WantCard({ want, onChange, onDelete }) {
   const [url, setUrl] = useState(want.url || "");
   const [address, setAddress] = useState(want.address || "");
   const [comment, setComment] = useState(want.comment || "");
+  const [visitedDate, setVisitedDate] = useState(want.visitedDate || "");
+  const [impression, setImpression] = useState(want.impression || "");
   useEffect(() => { setPlace(want.place || ""); }, [want.place]);
   useEffect(() => { setUrl(want.url || ""); }, [want.url]);
   useEffect(() => { setAddress(want.address || ""); }, [want.address]);
   useEffect(() => { setComment(want.comment || ""); }, [want.comment]);
+  useEffect(() => { setVisitedDate(want.visitedDate || ""); }, [want.visitedDate]);
+  useEffect(() => { setImpression(want.impression || ""); }, [want.impression]);
   return (
     <div className="ft-meet-item">
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
@@ -1309,6 +1339,14 @@ function WantCard({ want, onChange, onDelete }) {
       <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, cursor: "pointer" }}>
         <input type="checkbox" checked={!!want.visited} onChange={(e) => onChange(want, "visited", e.target.checked)} /> 行った
       </label>
+      {want.visited && (
+        <>
+          <div className="ft-meet-field-label">行った日付</div>
+          <input type="date" className="ft-meet-textarea" style={{ minHeight: "auto" }} value={visitedDate} onChange={(e) => setVisitedDate(e.target.value)} onBlur={() => onChange(want, "visitedDate", visitedDate)} />
+          <div className="ft-meet-field-label">感想</div>
+          <textarea className="ft-meet-textarea" value={impression} onChange={(e) => setImpression(e.target.value)} onBlur={() => onChange(want, "impression", impression)} placeholder="行ってみてどうだったか" />
+        </>
+      )}
     </div>
   );
 }

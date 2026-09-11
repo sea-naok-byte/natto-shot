@@ -24,6 +24,9 @@
 .ft-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
 .ft-title { font-family: 'Noto Serif JP', serif; font-weight: 700; font-size: 24px; margin: 0; color: var(--text); }
 .ft-logout { background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ft-notif-btn { background: var(--surface-2); border: 1px solid var(--border); width: auto; height: 34px; padding: 0 10px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; font-weight: 700; }
+.ft-notif-x-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; color: var(--danger); }
+.ft-notif-x { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 22px; line-height: 1; color: var(--danger); pointer-events: none; }
 .ft-logout:hover { color: var(--danger); border-color: var(--danger); }
 .ft-rolebar { display: flex; align-items: center; gap: 6px; margin: 4px 0 8px; font-size: 12px; color: var(--muted); }
 .ft-rolebar button { background: none; border: none; color: var(--chrome); font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; }
