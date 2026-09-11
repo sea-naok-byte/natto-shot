@@ -1,5 +1,5 @@
 import { getToken, onMessage } from "firebase/messaging";
-import { doc, setDoc, deleteDoc } from "firebase/firestore";
+import { doc, setDoc, deleteDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db, vapidKey, getMessagingIfSupported } from "../firebase";
 
 export async function enablePushNotifications(myRole) {
@@ -14,6 +14,16 @@ export async function enablePushNotifications(myRole) {
     const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
     if (!token) return { ok: false, reason: "no-token" };
+
+    // 同じ役割(なおや/ゆりか)に対して古い登録が残っていると、同じ端末なのに
+    // (Safariのタブ / ホーム画面アプリ、など)複数の宛先に二重に届いてしまうことがあるため、
+    // 新しく登録するときは、その役割の古い登録を先に消してから登録し直す
+    try {
+      const q = query(collection(db, "fcmTokens"), where("person", "==", myRole));
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map((d) => (d.id !== token ? deleteDoc(d.ref) : Promise.resolve())));
+    } catch {}
+
     await setDoc(doc(db, "fcmTokens", token), { person: myRole, updatedAt: Date.now() });
     localStorage.setItem(`ft_fcm_token_${myRole}`, token);
     return { ok: true, token };
@@ -46,15 +56,16 @@ export function listenForegroundMessages(cb) {
 }
 
 // new Notification(...) はiPhoneのSafari(ホーム画面追加含む)では動かないため、
-// できるだけService Worker経由(showNotification)で表示する
-export async function showLocalNotification(title, body) {
+// できるだけService Worker経由(showNotification)で表示する。
+// タップしたときにチャット画面へ飛べるよう、開くURLをdataに含めておく。
+export async function showLocalNotification(title, body, url = "/?tab=chat") {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
   try {
     if (navigator.serviceWorker) {
       let reg = await navigator.serviceWorker.getRegistration("/firebase-messaging-sw.js");
       if (!reg) reg = await navigator.serviceWorker.ready.catch(() => null);
       if (reg && reg.showNotification) {
-        await reg.showNotification(title, { body, icon: "/icon-192.png" });
+        await reg.showNotification(title, { body, icon: "/icon-192.png", data: { url } });
         return;
       }
     }

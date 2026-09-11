@@ -25,11 +25,16 @@ exports.sendChatNotification = onDocumentCreated({ document: "chat/{msgId}", reg
 
   const tokens = tokensSnap.docs.map((d) => d.id);
   const body = msg.type === "stamp" ? "スタンプが届きました" : (msg.content || "");
+  const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "";
+  const appUrl = `https://${projectId}.web.app/?tab=chat`;
 
+  // notification フィールドではなく data のみで送る(ブラウザによって挙動が不安定になりやすいため)。
+  // タイトル・本文・タップ時に開くURLをすべて自前で持たせ、Service Worker側で表示を組み立てる。
   const message = {
-    notification: {
+    data: {
       title: `${names[msg.person] || "相手"}より`,
       body,
+      url: appUrl,
     },
     tokens,
   };

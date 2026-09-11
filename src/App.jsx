@@ -3,7 +3,7 @@ import { collection, getDocs, writeBatch } from "firebase/firestore";
 import {
   Calendar as CalendarIcon, MessageCircle, LogOut, Plus, X, Send,
   ChevronLeft, ChevronRight, ChevronDown, Search, Smile, Sparkles, CheckCheck, Lock,
-  Heart, BookOpen, MoreHorizontal, RefreshCw, Bell, Pencil, Phone, Trash2, ArrowDown, Star,
+  Heart, BookOpen, MoreHorizontal, RefreshCw, Bell, Pencil, Phone, Trash2, ArrowDown, Star, MapPin,
 } from "lucide-react";
 
 import { db, ensureSignedIn } from "./firebase";
@@ -19,6 +19,7 @@ import {
   listenChatRecent, fetchAllChatOnce, sendChatMessage, deleteChatMessage, deleteChatMessagesBefore, markMessagesRead,
   listenDiary, saveDiaryEntry, deleteDiaryEntry,
   listenCalls, addCallRecord, deleteCallRecord,
+  listenWants, addWant, updateWant, deleteWant,
 } from "./lib/store";
 
 // デモ中は「切替」でどちらの名前も自由に見られるようにしている。
@@ -47,6 +48,14 @@ function linkify(text) {
   return out;
 }
 
+// 「例）example.com」のように http(s):// を省略して入力されても開けるようにする
+function normalizeUrl(u) {
+  if (!u) return "";
+  const trimmed = u.trim();
+  if (!trimmed) return "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export default function App() {
   const [booting, setBooting] = useState(true);
   const [metaExists, setMetaExists] = useState(null);
@@ -70,6 +79,8 @@ export default function App() {
   const [shifts, setShifts] = useState([]);
   const [diary, setDiary] = useState([]);
   const [calls, setCalls] = useState([]);
+  const [wants, setWants] = useState([]);
+  const [wantSearchQuery, setWantSearchQuery] = useState("");
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -182,7 +193,8 @@ export default function App() {
     const u1 = listenShifts(setShifts);
     const u2 = listenDiary(setDiary);
     const u3 = listenCalls(setCalls);
-    return () => { u1(); u2(); u3(); };
+    const u4 = listenWants(setWants);
+    return () => { u1(); u2(); u3(); u4(); };
   }, [authed, myRole]);
 
   useEffect(() => {
@@ -270,9 +282,22 @@ export default function App() {
     listenForegroundMessages((payload) => {
       const showIt = tabRef.current !== "chat" || (typeof document !== "undefined" && document.hidden);
       if (!showIt) return;
-      const { title, body } = payload.notification || {};
-      showLocalNotification(title || "なっとう", body || "");
+      const title = payload.data?.title || payload.notification?.title || "なっとう";
+      const body = payload.data?.body || payload.notification?.body || "";
+      showLocalNotification(title, body);
     });
+  }, [myRole]);
+
+  // 通知をタップして開いたとき(?tab=chat)は、そのままチャット画面に飛ぶ
+  useEffect(() => {
+    if (!myRole) return;
+    const params = new URLSearchParams(window.location.search);
+    const wantTab = params.get("tab");
+    if (wantTab === "chat" || wantTab === "meet" || wantTab === "diary" || wantTab === "schedule") {
+      setTab(wantTab);
+      if (wantTab === "chat") isNearBottomRef.current = true;
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, [myRole]);
 
   /* ---- auth ---- */
@@ -392,6 +417,14 @@ export default function App() {
     markSeen("meet");
     if (entry.isGroup) updateShiftGroupFields(entry.groupId, { [field]: value }, myRole);
     else updateShiftFull(entry.id, { [field]: value }, myRole);
+  }
+
+  function handleAddWant() {
+    addWant({ place: "", url: "", address: "", comment: "", visited: false }, myRole);
+  }
+
+  function handleWantFieldChange(want, field, value) {
+    updateWant(want.id, { [field]: value });
   }
 
   /* ---- derived ---- */
@@ -577,11 +610,12 @@ export default function App() {
 
   return (
     <div className="ft-root">
-      <div className={`ft-shell ${(tab === "chat" || tab === "meet" || tab === "diary") ? "no-scroll" : ""}`}>
+      <div className={`ft-shell ${(tab === "chat" || tab === "meet" || tab === "diary" || tab === "want") ? "no-scroll" : ""}`}>
         <div className="ft-header">
           <h1 className="ft-title ft-display">なっとう</h1>
           <div style={{ display: "flex", gap: 6 }}>
             {DEMO_MODE && <button className="ft-logout" title="テスト用：全データを消す" onClick={() => setShowResetConfirm(true)}><Trash2 size={16} /></button>}
+            <button className="ft-logout" title="更新" onClick={() => window.location.reload()}><RefreshCw size={16} /></button>
             <button className="ft-logout" title="ログアウト" onClick={handleLogout}><LogOut size={16} /></button>
           </div>
         </div>
@@ -1010,6 +1044,47 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {tab === "want" && (
+          <div className="ft-card ft-chat">
+            <div className="ft-modal-title" style={{ color: "var(--record)", marginBottom: 12 }}><MapPin size={17} style={{ verticalAlign: "-3px", marginRight: 5 }} />行きたい</div>
+            <div className="ft-search-row">
+              <Search size={14} color="var(--muted)" />
+              <input className="ft-search-input" placeholder="場所・住所・コメントを検索" value={wantSearchQuery} onChange={(e) => setWantSearchQuery(e.target.value)} />
+              {wantSearchQuery && <button onClick={() => setWantSearchQuery("")}><X size={14} /></button>}
+            </div>
+            <button className="ft-add-btn" style={{ background: "var(--record)", marginBottom: 10 }} onClick={handleAddWant}><Plus size={13} /> 追加</button>
+            <div className="ft-chat-body-wrap">
+              <div className="ft-chat-body">
+                {(() => {
+                  const q = wantSearchQuery.trim().toLowerCase();
+                  const matches = (w) => {
+                    if (!q) return true;
+                    const hay = [w.place, w.address, w.comment, w.url].filter(Boolean).join(" ").toLowerCase();
+                    return hay.includes(q);
+                  };
+                  const filtered = wants.filter(matches);
+                  const notVisited = filtered.filter((w) => !w.visited).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                  const visited = filtered.filter((w) => w.visited).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                  return (
+                    <>
+                      <div className="ft-meet-section-title" style={{ marginTop: 0 }}>行きたい（{notVisited.length}）</div>
+                      {notVisited.length === 0 && <div className="ft-empty">{q ? "見つかりませんでした" : "まだ登録がありません"}</div>}
+                      {notVisited.map((w) => (
+                        <WantCard key={w.id} want={w} onChange={handleWantFieldChange} onDelete={() => deleteWant(w.id)} />
+                      ))}
+                      <div className="ft-meet-section-title">行った（{visited.length}）</div>
+                      {visited.length === 0 && <div className="ft-empty">{q ? "見つかりませんでした" : "まだありません"}</div>}
+                      {visited.map((w) => (
+                        <WantCard key={w.id} want={w} onChange={handleWantFieldChange} onDelete={() => deleteWant(w.id)} />
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="ft-bottomnav">
@@ -1022,6 +1097,9 @@ export default function App() {
         </button>
         <button className={`ft-navitem ${tab === "diary" ? "active" : ""}`} onClick={() => handleTabChange("diary")}>
           <BookOpen size={18} />日記{hasNewDiary && <span className="ft-nav-dot" />}
+        </button>
+        <button className={`ft-navitem ${tab === "want" ? "active" : ""}`} onClick={() => handleTabChange("want")}>
+          <MapPin size={18} />行きたい
         </button>
       </div>
 
@@ -1188,6 +1266,40 @@ function MeetupEditor({ entry, onChange }) {
         </>
       )}
       {isFutureDate(entry.date) && <div className="ft-hint" style={{ marginTop: 4 }}>思い出の記録は、当日以降に書けるようになります</div>}
+    </div>
+  );
+}
+
+function WantCard({ want, onChange, onDelete }) {
+  const [place, setPlace] = useState(want.place || "");
+  const [url, setUrl] = useState(want.url || "");
+  const [address, setAddress] = useState(want.address || "");
+  const [comment, setComment] = useState(want.comment || "");
+  useEffect(() => { setPlace(want.place || ""); }, [want.place]);
+  useEffect(() => { setUrl(want.url || ""); }, [want.url]);
+  useEffect(() => { setAddress(want.address || ""); }, [want.address]);
+  useEffect(() => { setComment(want.comment || ""); }, [want.comment]);
+  return (
+    <div className="ft-meet-item">
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <input className="ft-meet-textarea" style={{ minHeight: "auto", fontWeight: 700, color: "var(--record)", flex: 1 }}
+          value={place} onChange={(e) => setPlace(e.target.value)} onBlur={() => onChange(want, "place", place)} placeholder="場所の名前" />
+        <button className="ft-entry-del" onClick={onDelete}><X size={14} /></button>
+      </div>
+      <div className="ft-meet-field-label">ホームページアドレス</div>
+      <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => onChange(want, "url", url)} placeholder="https://..." />
+      {url && (
+        <a href={normalizeUrl(url)} target="_blank" rel="noopener noreferrer" className="ft-link" style={{ display: "inline-block", marginTop: 4, fontSize: 12 }}>
+          🔗 ページを開く
+        </a>
+      )}
+      <div className="ft-meet-field-label">住所</div>
+      <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={address} onChange={(e) => setAddress(e.target.value)} onBlur={() => onChange(want, "address", address)} placeholder="住所" />
+      <div className="ft-meet-field-label">コメント</div>
+      <textarea className="ft-meet-textarea" value={comment} onChange={(e) => setComment(e.target.value)} onBlur={() => onChange(want, "comment", comment)} />
+      <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, cursor: "pointer" }}>
+        <input type="checkbox" checked={!!want.visited} onChange={(e) => onChange(want, "visited", e.target.checked)} /> 行った
+      </label>
     </div>
   );
 }

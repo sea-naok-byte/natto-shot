@@ -133,3 +133,21 @@ export async function addCallRecord(date, person) {
 export async function deleteCallRecord(id) {
   await deleteDoc(doc(db, "calls", id));
 }
+
+/* ---------------- wants (行きたい) ---------------- */
+
+export function listenWants(callback) {
+  return onSnapshot(collection(db, "wants"), (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+
+export async function addWant(entry, by) {
+  await addDoc(collection(db, "wants"), { ...entry, createdBy: by, createdAt: Date.now() });
+}
+
+export async function updateWant(id, patch) {
+  await updateDoc(doc(db, "wants", id), patch);
+}
+
+export async function deleteWant(id) {
+  await deleteDoc(doc(db, "wants", id));
+}
