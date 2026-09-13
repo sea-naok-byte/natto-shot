@@ -92,7 +92,7 @@ export default function App() {
   const [resetting, setResetting] = useState(false);
 
   const [tab, setTab] = useState("schedule");
-  const [viewMode, setViewMode] = useState("5week");
+  const [viewMode, setViewMode] = useState(() => (localStorage.getItem("ft_role") === "b" ? "month" : "5week"));
   const [cursor, setCursor] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
   const [weekOffset, setWeekOffset] = useState(0);
 
@@ -352,7 +352,11 @@ export default function App() {
     localStorage.removeItem("ft_authed");
     setAuthed(false);
   }
-  function chooseRole(role) { localStorage.setItem("ft_role", role); setMyRole(role); }
+  function chooseRole(role) {
+    localStorage.setItem("ft_role", role);
+    setMyRole(role);
+    setViewMode(role === "b" ? "month" : "5week");
+  }
   function switchRole() { localStorage.removeItem("ft_role"); setMyRole(null); }
 
   async function resetAllData() {
@@ -545,6 +549,28 @@ export default function App() {
     setSelectedDate(todayKeyStr());
   }
 
+  const swipeStartRef = useRef(null);
+  function handleCalSwipeStart(e) {
+    const t = e.touches[0];
+    swipeStartRef.current = { x: t.clientX, y: t.clientY };
+  }
+  function handleCalSwipeEnd(e) {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    if (viewMode === "month") {
+      if (dx > 0) setCursor((c) => (c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 }));
+      else setCursor((c) => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
+    } else {
+      if (dx > 0) setWeekOffset((w) => w - 5);
+      else setWeekOffset((w) => w + 5);
+    }
+  }
+
   function goToScheduleDate(dateStr) {
     const d = new Date(dateStr + "T00:00:00");
     setViewMode("month");
@@ -700,46 +726,48 @@ export default function App() {
                   <button className="ft-navbtn" onClick={() => setWeekOffset((w) => w + 1)}><ChevronRight size={15} /></button>
                 </div>
               )}
-              <div className="ft-weekdays">{WEEKDAY_JP.map((w) => <div key={w}>{w}</div>)}</div>
-              <div className="ft-grid">
-                {gridCells.map((key, i) => {
-                  if (key === null) return <div key={i} className="ft-cell empty" />;
-                  const list = byDate[key] || [];
-                  const entriesA = list.filter((e) => e.person === "a");
-                  const entriesB = list.filter((e) => e.person === "b");
-                  const hasMeet = list.some((e) => e.type === "合流");
-                  const hasSpecial = list.some((e) => e.type === "特別");
-                  const hasDiary = !!diaryByDate[key];
-                  const hasPhone = hasPhoneCall(key);
-                  const isToday = key === todayKey;
-                  const isSelected = key === selectedDate;
-                  const d = new Date(key + "T00:00:00");
-                  const dow = d.getDay();
-                  const isHoliday = !!getHolidayName(key);
-                  const wknd = (dow === 0 || isHoliday) ? "sun" : dow === 6 ? "sat" : "";
-                  const showMonthTag = viewMode === "5week" && d.getDate() === 1;
-                  return (
-                    <div key={i} className={`ft-cell ${wknd} ${isToday ? "today" : ""} ${isSelected ? "selected" : ""} ${hasSpecial && !hasMeet ? "special" : ""} ${hasMeet ? "meet" : ""}`}
-                      title={isHoliday ? getHolidayName(key) : undefined}
-                      onClick={() => { setSelectedDate(key); setShowForm(false); }}>
-                      <div className="ft-cell-daterow">
-                        {hasPhone && <Phone size={9} color="var(--record)" title="電話をした日" />}
-                        <span className="ft-cell-num-wrap">
-                          {hasMeet && <Heart size={19} className="ft-cell-heart" fill="none" color="var(--meet)" strokeWidth={3} />}
-                          {!hasMeet && hasSpecial && <Star size={19} className="ft-cell-heart" fill="none" color="var(--special)" strokeWidth={3} />}
-                          <span className={`ft-cell-num ${hasMeet ? "in-heart" : ""}`}>{showMonthTag ? `${d.getMonth() + 1}/${d.getDate()}` : d.getDate()}</span>
-                        </span>
-                        {hasDiary && <BookOpen size={9} color="var(--record)" title="日記あり" />}
+              <div onTouchStart={handleCalSwipeStart} onTouchEnd={handleCalSwipeEnd}>
+                <div className="ft-weekdays">{WEEKDAY_JP.map((w) => <div key={w}>{w}</div>)}</div>
+                <div className="ft-grid">
+                  {gridCells.map((key, i) => {
+                    if (key === null) return <div key={i} className="ft-cell empty" />;
+                    const list = byDate[key] || [];
+                    const entriesA = list.filter((e) => e.person === "a");
+                    const entriesB = list.filter((e) => e.person === "b");
+                    const hasMeet = list.some((e) => e.type === "合流");
+                    const hasSpecial = list.some((e) => e.type === "特別");
+                    const hasDiary = !!diaryByDate[key];
+                    const hasPhone = hasPhoneCall(key);
+                    const isToday = key === todayKey;
+                    const isSelected = key === selectedDate;
+                    const d = new Date(key + "T00:00:00");
+                    const dow = d.getDay();
+                    const isHoliday = !!getHolidayName(key);
+                    const wknd = (dow === 0 || isHoliday) ? "sun" : dow === 6 ? "sat" : "";
+                    const showMonthTag = viewMode === "5week" && d.getDate() === 1;
+                    return (
+                      <div key={i} className={`ft-cell ${wknd} ${isToday ? "today" : ""} ${isSelected ? "selected" : ""} ${hasSpecial && !hasMeet ? "special" : ""} ${hasMeet ? "meet" : ""}`}
+                        title={isHoliday ? getHolidayName(key) : undefined}
+                        onClick={() => { setSelectedDate(key); setShowForm(false); }}>
+                        <div className="ft-cell-daterow">
+                          {hasPhone && <Phone size={9} color="var(--record)" title="電話をした日" />}
+                          <span className="ft-cell-num-wrap">
+                            {hasMeet && <Heart size={19} className="ft-cell-heart" fill="none" color="var(--meet)" strokeWidth={3} />}
+                            {!hasMeet && hasSpecial && <Star size={19} className="ft-cell-heart" fill="none" color="var(--special)" strokeWidth={3} />}
+                            <span className={`ft-cell-num ${hasMeet ? "in-heart" : ""}`}>{showMonthTag ? `${d.getMonth() + 1}/${d.getDate()}` : d.getDate()}</span>
+                          </span>
+                          {hasDiary && <BookOpen size={9} color="var(--record)" title="日記あり" />}
+                        </div>
+                        <div className="ft-cell-row">
+                          {entriesA.slice(0, 3).map((e) => { const Icon = TYPE_ICON[e.type] || MoreHorizontal; return <span key={e.id} className="ft-chip" style={{ background: softOf("a"), border: `1px solid ${colorOf("a")}` }}><Icon size={8} color={colorOf("a")} /></span>; })}
+                        </div>
+                        <div className="ft-cell-row">
+                          {entriesB.slice(0, 3).map((e) => { const Icon = TYPE_ICON[e.type] || MoreHorizontal; return <span key={e.id} className="ft-chip" style={{ background: softOf("b"), border: `1px solid ${colorOf("b")}` }}><Icon size={8} color={colorOf("b")} /></span>; })}
+                        </div>
                       </div>
-                      <div className="ft-cell-row">
-                        {entriesA.slice(0, 3).map((e) => { const Icon = TYPE_ICON[e.type] || MoreHorizontal; return <span key={e.id} className="ft-chip" style={{ background: softOf("a"), border: `1px solid ${colorOf("a")}` }}><Icon size={8} color={colorOf("a")} /></span>; })}
-                      </div>
-                      <div className="ft-cell-row">
-                        {entriesB.slice(0, 3).map((e) => { const Icon = TYPE_ICON[e.type] || MoreHorizontal; return <span key={e.id} className="ft-chip" style={{ background: softOf("b"), border: `1px solid ${colorOf("b")}` }}><Icon size={8} color={colorOf("b")} /></span>; })}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
