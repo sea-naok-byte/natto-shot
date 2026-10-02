@@ -33,6 +33,43 @@ export async function enablePushNotifications(myRole) {
   }
 }
 
+// FCMのトークンは、ブラウザの更新やキャッシュ整理などで気づかないうちに作り直されることがある。
+// その場合、Firestoreに残っている古いトークン宛に送信され続け「通知が来ない」状態になるため、
+// アプリ起動時に毎回トークンを取り直し、変わっていれば静かに登録し直す。
+export async function refreshPushToken(myRole) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  // 利用者が自分で通知をオフにしている端末では、何もしない
+  if (!localStorage.getItem(`ft_fcm_token_${myRole}`)) return;
+
+  const messaging = await getMessagingIfSupported();
+  if (!messaging) return;
+
+  try {
+    const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+    const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
+    if (!token) return;
+
+    const saved = localStorage.getItem(`ft_fcm_token_${myRole}`);
+    if (token === saved) {
+      // 変わっていなくても、生きている印として更新日時だけ入れ直しておく
+      await setDoc(doc(db, "fcmTokens", token), { person: myRole, updatedAt: Date.now() }, { merge: true });
+      return;
+    }
+
+    // トークンが変わっていた場合は、同じ役割の古い登録を消してから登録し直す
+    try {
+      const q = query(collection(db, "fcmTokens"), where("person", "==", myRole));
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map((d) => (d.id !== token ? deleteDoc(d.ref) : Promise.resolve())));
+    } catch {}
+
+    await setDoc(doc(db, "fcmTokens", token), { person: myRole, updatedAt: Date.now() });
+    localStorage.setItem(`ft_fcm_token_${myRole}`, token);
+  } catch (e) {
+    console.warn("トークンの更新に失敗:", e);
+  }
+}
+
 // ブラウザの通知許可自体は変えず、「この端末には送らないでね」という状態にする
 // (fcmTokensから自分のトークンを消すだけなので、Cloud Functionsが送り先として使わなくなる)
 export async function disablePushNotifications(myRole) {

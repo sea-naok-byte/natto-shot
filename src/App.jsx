@@ -12,7 +12,7 @@ import {
   buildMonthGrid, nthWeekdayLabel, generateRecurrenceDates, generateSpanDates, getHolidayName,
 } from "./lib/dates";
 import { TYPES, TYPE_ICON, STAMPS, EMOJIS } from "./lib/constants";
-import { enablePushNotifications, disablePushNotifications, isPushRegistered, listenForegroundMessages, showLocalNotification } from "./lib/notifications";
+import { enablePushNotifications, disablePushNotifications, isPushRegistered, refreshPushToken, listenForegroundMessages, showLocalNotification } from "./lib/notifications";
 import {
   getSetup, createSetup,
   listenShifts, addShiftsBatch, deleteShiftSingle, deleteShiftGroupFuture, updateShiftFull, updateShiftGroupFields,
@@ -307,6 +307,18 @@ export default function App() {
       const body = payload.data?.body || payload.notification?.body || "";
       showLocalNotification(title, body);
     });
+  }, [myRole]);
+
+  // 通知の宛先(トークン)が知らないうちに作り直されて届かなくなるのを防ぐため、
+  // 起動時と、アプリを再び表示したときにトークンを確認・更新する
+  useEffect(() => {
+    if (!myRole) return;
+    refreshPushToken(myRole);
+    function onVisible() {
+      if (!document.hidden) refreshPushToken(myRole);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [myRole]);
 
   // 通知をタップして開いたとき(?tab=chat)は、そのままチャット画面に飛ぶ
@@ -813,16 +825,16 @@ export default function App() {
                         )}
                       </>
                     )}
-                    <div><label className="ft-label">コメント</label><textarea className="ft-input" rows={2} value={formComment} onChange={(e) => setFormComment(e.target.value)} placeholder="任意のメモ" /></div>
+                    <div><label className="ft-label">コメント</label><AutoTextarea className="ft-input" minRows={2} value={formComment} onChange={(e) => setFormComment(e.target.value)} placeholder="任意のメモ" /></div>
                     {formType === "合流" && (
                       <>
                         <div className="ft-form-row">
                           <div style={{ flex: 1 }}><label className="ft-label">回数</label><input className="ft-input" value={formMeetCount} onChange={(e) => setFormMeetCount(e.target.value)} placeholder="例）12回目" /></div>
                           <div style={{ flex: 1 }}><label className="ft-label">行ったお店</label><input className="ft-input" value={formMeetPlace} onChange={(e) => setFormMeetPlace(e.target.value)} placeholder="例）〇〇食堂" /></div>
                         </div>
-                        <div><label className="ft-label">備考（相談・段取りメモ）</label><textarea className="ft-input" rows={2} value={formMeetPlan} onChange={(e) => setFormMeetPlan(e.target.value)} placeholder="待ち合わせ場所や持ち物など" /></div>
+                        <div><label className="ft-label">備考（相談・段取りメモ）</label><AutoTextarea className="ft-input" minRows={2} value={formMeetPlan} onChange={(e) => setFormMeetPlan(e.target.value)} placeholder="待ち合わせ場所や持ち物など" /></div>
                         {!isFutureDate(selectedDate) && (
-                          <div><label className="ft-label">思い出の記録</label><textarea className="ft-input" rows={2} value={formMeetMemory} onChange={(e) => setFormMeetMemory(e.target.value)} placeholder="当日〜事後に残す記録" /></div>
+                          <div><label className="ft-label">思い出の記録</label><AutoTextarea className="ft-input" minRows={2} value={formMeetMemory} onChange={(e) => setFormMeetMemory(e.target.value)} placeholder="当日〜事後に残す記録" /></div>
                         )}
                         {isFutureDate(selectedDate) && <div className="ft-hint">思い出の記録は、当日以降に書けるようになります</div>}
                       </>
@@ -999,7 +1011,7 @@ export default function App() {
             <div className="ft-chat-input-row">
               <button className={`ft-iconbtn ${showEmoji ? "active" : ""}`} onClick={() => { setShowEmoji((v) => !v); setShowStamps(false); }}><Smile size={16} /></button>
               <button className={`ft-iconbtn ${showStamps ? "active" : ""}`} onClick={() => { setShowStamps((v) => !v); setShowEmoji(false); }}><Sparkles size={16} /></button>
-              <textarea className="ft-chat-input" rows={1} placeholder="メッセージ（Enterで改行）" value={chatText} onChange={(e) => setChatText(e.target.value)} />
+              <AutoTextarea className="ft-chat-input" minRows={1} style={{ overflowY: "auto" }} placeholder="メッセージ（Enterで改行）" value={chatText} onChange={(e) => setChatText(e.target.value)} />
               <button className="ft-send" disabled={!chatText.trim()} onClick={() => { sendChatMessage({ person: myRole, type: "text", content: chatText }); setChatText(""); isNearBottomRef.current = true; }}><Send size={16} /></button>
             </div>
           </div>
@@ -1290,6 +1302,35 @@ export default function App() {
   );
 }
 
+// 入力された文章の長さに合わせて、自動的に高さが伸び縮みするテキスト欄。
+// スクロールしないと全文が見えない問題を防ぐために、全画面で共通して使う。
+function AutoTextarea({ value, minRows = 2, style, ...rest }) {
+  const ref = useRef(null);
+  function resize() {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }
+  // 入力中だけでなく、別の場所での保存などで値が変わったときにも高さを合わせ直す
+  useLayoutEffect(() => { resize(); }, [value]);
+  // フォントの読み込み完了や画面幅の変化でも折り返し行数が変わるため、追従させる
+  useEffect(() => {
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={minRows}
+      onInput={resize}
+      style={{ overflowY: "hidden", resize: "none", ...style }}
+      {...rest}
+    />
+  );
+}
+
 function MeetPlacesEditor({ places, onSave, askConfirm }) {
   const [list, setList] = useState(places && places.length ? places : []);
   useEffect(() => { setList(places && places.length ? places : []); }, [places]);
@@ -1323,7 +1364,7 @@ function MeetPlacesEditor({ places, onSave, askConfirm }) {
               value={p.name} onChange={(e) => updateRow(idx, "name", e.target.value)} onBlur={commitRow} placeholder="例）〇〇食堂" />
             <button className="ft-entry-del" onClick={() => removeRow(idx)}><X size={12} /></button>
           </div>
-          <textarea className="ft-meet-textarea" value={p.comment} onChange={(e) => updateRow(idx, "comment", e.target.value)} onBlur={commitRow} placeholder="このお店についてのコメント" />
+          <AutoTextarea className="ft-meet-textarea" value={p.comment} onChange={(e) => updateRow(idx, "comment", e.target.value)} onBlur={commitRow} placeholder="このお店についてのコメント" />
         </div>
       ))}
       <button className="ft-btn-ghost" style={{ marginTop: 6, fontSize: 11.5, padding: "5px 12px" }} onClick={addRow}>+ お店を追加</button>
@@ -1357,11 +1398,11 @@ function MeetupItem({ entry, onChange, onEdit, hideHeader, askConfirm }) {
       <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
       <MeetPlacesEditor places={entry.meetPlaces} onSave={(places) => onChange(entry, "meetPlaces", places)} askConfirm={askConfirm} />
       <div className="ft-meet-field-label">備考（相談・段取りメモ）</div>
-      <textarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
+      <AutoTextarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
       {!isFutureDate(targetDate) && (
         <>
           <div className="ft-meet-field-label">思い出の記録</div>
-          <textarea className="ft-meet-textarea" value={memory} onChange={(e) => setMemory(e.target.value)} onBlur={() => onChange(entry, "meetMemory", memory)} />
+          <AutoTextarea className="ft-meet-textarea" value={memory} onChange={(e) => setMemory(e.target.value)} onBlur={() => onChange(entry, "meetMemory", memory)} />
         </>
       )}
       {isFutureDate(targetDate) && <div className="ft-hint" style={{ marginTop: 4 }}>思い出の記録は、当日以降に書けるようになります</div>}
@@ -1382,16 +1423,16 @@ function MeetupEditor({ entry, onChange, askConfirm }) {
   return (
     <div style={{ width: "100%" }}>
       <div className="ft-meet-field-label">コメント</div>
-      <textarea className="ft-meet-textarea" value={comment} onChange={(e) => setComment(e.target.value)} onBlur={() => onChange(entry, "comment", comment)} />
+      <AutoTextarea className="ft-meet-textarea" value={comment} onChange={(e) => setComment(e.target.value)} onBlur={() => onChange(entry, "comment", comment)} />
       <div className="ft-meet-field-label" style={{ marginTop: 6 }}>回数</div>
       <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
       <MeetPlacesEditor places={entry.meetPlaces} onSave={(places) => onChange(entry, "meetPlaces", places)} askConfirm={askConfirm} />
       <div className="ft-meet-field-label">備考（相談・段取りメモ）</div>
-      <textarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
+      <AutoTextarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
       {!isFutureDate(entry.date) && (
         <>
           <div className="ft-meet-field-label">思い出の記録</div>
-          <textarea className="ft-meet-textarea" value={memory} onChange={(e) => setMemory(e.target.value)} onBlur={() => onChange(entry, "meetMemory", memory)} />
+          <AutoTextarea className="ft-meet-textarea" value={memory} onChange={(e) => setMemory(e.target.value)} onBlur={() => onChange(entry, "meetMemory", memory)} />
         </>
       )}
       {isFutureDate(entry.date) && <div className="ft-hint" style={{ marginTop: 4 }}>思い出の記録は、当日以降に書けるようになります</div>}
@@ -1429,7 +1470,7 @@ function WantCard({ want, onChange, onDelete }) {
       <div className="ft-meet-field-label">住所</div>
       <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={address} onChange={(e) => setAddress(e.target.value)} onBlur={() => onChange(want, "address", address)} placeholder="住所" />
       <div className="ft-meet-field-label">コメント</div>
-      <textarea className="ft-meet-textarea" value={comment} onChange={(e) => setComment(e.target.value)} onBlur={() => onChange(want, "comment", comment)} />
+      <AutoTextarea className="ft-meet-textarea" value={comment} onChange={(e) => setComment(e.target.value)} onBlur={() => onChange(want, "comment", comment)} />
       <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12, cursor: "pointer" }}>
         <input type="checkbox" checked={!!want.visited} onChange={(e) => onChange(want, "visited", e.target.checked)} /> 行った
       </label>
@@ -1438,7 +1479,7 @@ function WantCard({ want, onChange, onDelete }) {
           <div className="ft-meet-field-label">行った日付</div>
           <input type="date" className="ft-meet-textarea" style={{ minHeight: "auto" }} value={visitedDate} onChange={(e) => setVisitedDate(e.target.value)} onBlur={() => onChange(want, "visitedDate", visitedDate)} />
           <div className="ft-meet-field-label">感想</div>
-          <textarea className="ft-meet-textarea" value={impression} onChange={(e) => setImpression(e.target.value)} onBlur={() => onChange(want, "impression", impression)} placeholder="行ってみてどうだったか" />
+          <AutoTextarea className="ft-meet-textarea" value={impression} onChange={(e) => setImpression(e.target.value)} onBlur={() => onChange(want, "impression", impression)} placeholder="行ってみてどうだったか" />
         </>
       )}
     </div>
@@ -1502,14 +1543,14 @@ function EditEntryModal({ entry, names, onSave, onClose }) {
               <input type="time" className="ft-input" value={end} onChange={(e) => setEnd(e.target.value)} />
             </div>
           )}
-          <div><label className="ft-label">コメント</label><textarea className="ft-input" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} /></div>
+          <div><label className="ft-label">コメント</label><AutoTextarea className="ft-input" minRows={2} value={comment} onChange={(e) => setComment(e.target.value)} /></div>
           {isMeet && (
             <>
               <div><label className="ft-label">回数</label><input className="ft-input" value={meetCount} onChange={(e) => setMeetCount(e.target.value)} placeholder="例）12回目" /></div>
               <div className="ft-hint">行ったお店(複数登録・お店ごとのコメント)は、この画面を閉じた後、合流の欄から直接編集できます</div>
-              <div><label className="ft-label">備考（相談・段取りメモ）</label><textarea className="ft-input" rows={2} value={meetPlan} onChange={(e) => setMeetPlan(e.target.value)} /></div>
+              <div><label className="ft-label">備考（相談・段取りメモ）</label><AutoTextarea className="ft-input" minRows={2} value={meetPlan} onChange={(e) => setMeetPlan(e.target.value)} /></div>
               {!isFutureDate(targetDate) && (
-                <div><label className="ft-label">思い出の記録</label><textarea className="ft-input" rows={2} value={meetMemory} onChange={(e) => setMeetMemory(e.target.value)} /></div>
+                <div><label className="ft-label">思い出の記録</label><AutoTextarea className="ft-input" minRows={2} value={meetMemory} onChange={(e) => setMeetMemory(e.target.value)} /></div>
               )}
               {isFutureDate(targetDate) && <div className="ft-hint">思い出の記録は、当日以降に書けるようになります</div>}
             </>
@@ -1542,7 +1583,7 @@ function DiaryEditor({ initialText, onSubmit, onDelete }) {
   }
   return (
     <>
-      <textarea className="ft-input" rows={4} value={value}
+      <AutoTextarea className="ft-input" minRows={4} value={value}
         onChange={(e) => { setValue(e.target.value); setSaved(false); }}
         placeholder="今日のことを書く" />
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>

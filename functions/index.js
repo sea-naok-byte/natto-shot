@@ -30,21 +30,45 @@ exports.sendChatNotification = onDocumentCreated({ document: "chat/{msgId}", reg
 
   // notification フィールドではなく data のみで送る(ブラウザによって挙動が不安定になりやすいため)。
   // タイトル・本文・タップ時に開くURLをすべて自前で持たせ、Service Worker側で表示を組み立てる。
+  //
+  // 端末がスリープ中・圏外などでも確実に届くように、
+  //  - priority を high にして「あとでまとめて配信」されないようにする
+  //  - TTL(保持期間)を長めに設定し、オフラインでも復帰時に受け取れるようにする
   const message = {
     data: {
       title: `${names[msg.person] || "相手"}より`,
       body,
       url: appUrl,
     },
+    android: { priority: "high" },
+    webpush: {
+      headers: {
+        Urgency: "high",
+        TTL: "86400", // 24時間は配信を試み続ける
+      },
+    },
     tokens,
   };
 
   try {
     const res = await getMessaging().sendEachForMulticast(message);
-    // 無効になった(削除・失効した)トークンは掃除しておく
+    // 「本当に無効になったトークン」だけを削除する。
+    // 一時的な障害(internal-error や quota 超過など)で消してしまうと、
+    // 以後その端末に二度と通知が届かなくなるため、エラーコードを見て判断する。
+    const UNREGISTERED = new Set([
+      "messaging/registration-token-not-registered",
+      "messaging/invalid-registration-token",
+      "messaging/invalid-argument",
+    ]);
     const invalid = [];
     res.responses.forEach((r, i) => {
-      if (!r.success) invalid.push(tokens[i]);
+      if (r.success) return;
+      const code = r.error && r.error.code;
+      if (UNREGISTERED.has(code)) {
+        invalid.push(tokens[i]);
+      } else {
+        console.warn("一時的な送信失敗(トークンは保持):", code, tokens[i]);
+      }
     });
     await Promise.all(invalid.map((t) => db.doc(`fcmTokens/${t}`).delete().catch(() => {})));
   } catch (e) {
