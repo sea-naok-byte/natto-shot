@@ -1032,7 +1032,8 @@ export default function App() {
                   const matches = (e) => {
                     if (!q) return true;
                     const placesText = (e.meetPlaces || []).map((p) => `${p.name} ${p.comment}`).join(" ");
-                    const hay = [e.comment, e.meetPlan, e.meetMemory, e.meetCount, e.meetPlace, placesText].filter(Boolean).join(" ").toLowerCase();
+                    const hotelsText = (e.meetHotels || []).map((h) => `${h.name} ${h.address}`).join(" ");
+                    const hay = [e.comment, e.meetPlan, e.meetMemory, e.meetCount, e.meetPlace, placesText, hotelsText].filter(Boolean).join(" ").toLowerCase();
                     return hay.includes(q);
                   };
                   const future = meetups.future.filter(matches);
@@ -1372,6 +1373,60 @@ function MeetPlacesEditor({ places, onSave, askConfirm }) {
   );
 }
 
+function MeetHotelsEditor({ hotels, onSave, askConfirm }) {
+  const [list, setList] = useState(hotels && hotels.length ? hotels : []);
+  useEffect(() => { setList(hotels && hotels.length ? hotels : []); }, [hotels]);
+
+  function updateRow(idx, field, value) {
+    setList((prev) => prev.map((h, i) => (i === idx ? { ...h, [field]: value } : h)));
+  }
+  function commitRow() {
+    onSave(list);
+  }
+  function addRow() {
+    const next = [...list, { name: "", url: "", address: "" }];
+    setList(next);
+    onSave(next);
+  }
+  function removeRow(idx) {
+    askConfirm("このホテルを削除しますか？", () => {
+      const next = list.filter((_, i) => i !== idx);
+      setList(next);
+      onSave(next);
+    });
+  }
+
+  return (
+    <div>
+      <div className="ft-meet-field-label">泊まったホテル</div>
+      {list.map((h, idx) => (
+        <div key={idx} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 8, marginTop: 6, background: "#fff" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input className="ft-meet-textarea" style={{ minHeight: "auto", flex: 1, marginTop: 0 }}
+              value={h.name} onChange={(e) => updateRow(idx, "name", e.target.value)} onBlur={commitRow} placeholder="例）〇〇ホテル" />
+            <button className="ft-entry-del" onClick={() => removeRow(idx)}><X size={12} /></button>
+          </div>
+          <input className="ft-meet-textarea" style={{ minHeight: "auto" }}
+            value={h.url} onChange={(e) => updateRow(idx, "url", e.target.value)} onBlur={commitRow} placeholder="https://..." />
+          {h.url && (
+            <a href={normalizeUrl(h.url)} target="_blank" rel="noopener noreferrer" className="ft-want-link-btn" style={{ marginTop: 4 }}>
+              <ExternalLink size={11} /> ページへ
+            </a>
+          )}
+          <input className="ft-meet-textarea" style={{ minHeight: "auto" }}
+            value={h.address} onChange={(e) => updateRow(idx, "address", e.target.value)} onBlur={commitRow} placeholder="住所" />
+          {h.address && (
+            <a href={googleMapsUrl(h.address)} target="_blank" rel="noopener noreferrer" className="ft-want-address" style={{ marginTop: 3 }}>
+              {stripPostalCode(h.address)}
+            </a>
+          )}
+        </div>
+      ))}
+      <button className="ft-btn-ghost" style={{ marginTop: 6, fontSize: 11.5, padding: "5px 12px" }} onClick={addRow}>+ ホテルを追加</button>
+    </div>
+  );
+}
+
 function MeetupItem({ entry, onChange, onEdit, hideHeader, askConfirm }) {
   const [plan, setPlan] = useState(entry.meetPlan || "");
   const [memory, setMemory] = useState(entry.meetMemory || "");
@@ -1397,6 +1452,7 @@ function MeetupItem({ entry, onChange, onEdit, hideHeader, askConfirm }) {
       <div className="ft-meet-field-label" style={{ marginTop: 8 }}>回数</div>
       <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
       <MeetPlacesEditor places={entry.meetPlaces} onSave={(places) => onChange(entry, "meetPlaces", places)} askConfirm={askConfirm} />
+      <MeetHotelsEditor hotels={entry.meetHotels} onSave={(hotels) => onChange(entry, "meetHotels", hotels)} askConfirm={askConfirm} />
       <div className="ft-meet-field-label">備考（相談・段取りメモ）</div>
       <AutoTextarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
       {!isFutureDate(targetDate) && (
@@ -1427,6 +1483,7 @@ function MeetupEditor({ entry, onChange, askConfirm }) {
       <div className="ft-meet-field-label" style={{ marginTop: 6 }}>回数</div>
       <input className="ft-meet-textarea" style={{ minHeight: "auto" }} value={count} onChange={(e) => setCount(e.target.value)} onBlur={() => onChange(entry, "meetCount", count)} placeholder="例）12回目" />
       <MeetPlacesEditor places={entry.meetPlaces} onSave={(places) => onChange(entry, "meetPlaces", places)} askConfirm={askConfirm} />
+      <MeetHotelsEditor hotels={entry.meetHotels} onSave={(hotels) => onChange(entry, "meetHotels", hotels)} askConfirm={askConfirm} />
       <div className="ft-meet-field-label">備考（相談・段取りメモ）</div>
       <AutoTextarea className="ft-meet-textarea" value={plan} onChange={(e) => setPlan(e.target.value)} onBlur={() => onChange(entry, "meetPlan", plan)} />
       {!isFutureDate(entry.date) && (
